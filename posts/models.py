@@ -1,7 +1,11 @@
+from __future__ import annotations
+
+import uuid
+
 from django.db import models
 from django.conf import settings
-import hmac, hashlib, base64
 from CloakPost.key_management import encrypt_aes, decrypt_aes
+
 
 class Post(models.Model):
     VISIBILITY_CHOICES = [
@@ -10,27 +14,43 @@ class Post(models.Model):
         ('private', 'Private'),
     ]
 
+    # Stable identity per post (prevents same-author ciphertext swaps)
+    uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+
     author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="posts")
     title = models.CharField(max_length=255)
     encrypted_content = models.BinaryField()
-    hmac_value = models.BinaryField()
+    # DEPRECATED: left in model to avoid immediate migration breakage; now nullable
+    hmac_value = models.BinaryField(null=True, blank=True)
     visibility = models.CharField(max_length=10, choices=VISIBILITY_CHOICES, default='public')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
-    # For simplicity we assume settings.AES_ENCRYPTION_KEY is bytes/base64 decoded by helper.
+    # ---------- AEAD AAD ----------
+
+    def _associated_data(self) -> bytes:
+        """
+        AEAD associated data to bind ciphertext to the post's stable identity.
+        Bind to author_id and an immutable per-post UUID.
+        """
+        return f"post|author={self.author_id}|post={self.uuid}".encode()
+
+    # ---------- content helpers ----------
+
     def set_content(self, plaintext: str, key: bytes):
-        blob = encrypt_aes(plaintext.encode(), key)
-        mac = hmac.new(key, blob, hashlib.sha256).digest()
+        """
+        Encrypt and store content using AES-GCM via encrypt_aes().
+        """
+        blob = encrypt_aes(plaintext.encode(), key, associated_data=self._associated_data())
         self.encrypted_content = blob
-        self.hmac_value = mac
+        self.hmac_value = None
 
     def get_content(self, key: bytes):
-        # Return None on failure rather than raising—callers must handle None.
+        """
+        Decrypt content using AES-GCM. Returns None on failure.
+        """
         try:
-            if not hmac.compare_digest(self.hmac_value, hmac.new(key, self.encrypted_content, hashlib.sha256).digest()):
-                return None
-            pt = decrypt_aes(self.encrypted_content, key)
+            pt = decrypt_aes(self.encrypted_content, key, associated_data=self._associated_data())
             return pt.decode()
         except Exception:
             return None

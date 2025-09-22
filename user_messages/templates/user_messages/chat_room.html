@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Chat with {{ peer.username }}{% endblock %}
+{% block content %}
+  <h2>Chat with {{ peer.username }}</h2>
+
+  <div id="chat-log" style="border:1px solid #ccc; height:200px; overflow-y:auto; margin-bottom:10px;"></div>
+
+  <input id="chat-input" type="text" placeholder="Type a message…" style="width:80%;">
+  <button id="chat-send">Send</button>
+
+  <script>
+    const roomUrl = "ws://" + window.location.host + "/ws/chat/{{ peer.id }}/";
+    const socket = new WebSocket(roomUrl.replace("http","ws"));
+
+    const log = document.getElementById("chat-log");
+    const input = document.getElementById("chat-input");
+    const sendBtn = document.getElementById("chat-send");
+
+    socket.onmessage = function(e) {
+      const data = JSON.parse(e.data);
+      if (data.type === "message") {
+        const el = document.createElement("div");
+        el.textContent = (data.plaintext || "[Encrypted]") + " (" + data.sender_id + ")";
+        log.appendChild(el);
+      }
+    };
+
+    sendBtn.onclick = function() {
+      const text = input.value.trim();
+      if (!text) return;
+      socket.send(JSON.stringify({ action: "send_message", text }));
+      input.value = "";
+    };
+  </script>
+{% endblock %}

@@ -1,74 +1,58 @@
-from django import forms
-from django.contrib.auth.forms import UserCreationForm, AuthenticationForm
-from .models import CustomUser, FriendRequest
-from cryptography.hazmat.primitives.asymmetric import rsa, padding
-from cryptography.hazmat.primitives import serialization, hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-import base64
-import os
-from django.conf import settings
-from django.contrib.auth import authenticate
-from CloakPost.key_management import encrypt_aes
+from __future__ import annotations
 
-class CustomUserCreationForm(UserCreationForm):
+from django import forms
+from django.contrib.auth.forms import AuthenticationForm
+from django.core.exceptions import ValidationError
+
+from .models import CustomUser
+
+
+class CustomUserCreationForm(forms.ModelForm):
+    """
+    Creates a user, sets password, generates RSA keypair,
+    and stores encrypted private key using a password-derived AES key.
+    Ensures the user is saved first to get a real id for AAD.
+    """
+    password1 = forms.CharField(widget=forms.PasswordInput)
+    password2 = forms.CharField(widget=forms.PasswordInput)
+
     class Meta:
         model = CustomUser
-        fields = ('username', 'email', 'password1', 'password2')
+        fields = ["username", "email"]
 
-    def save(self, commit=True):
-        user = super().save(commit=False)
-        password = self.cleaned_data['password1']
-        private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-        public_key = private_key.public_key()
-        user.public_key = public_key.public_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PublicFormat.SubjectPublicKeyInfo
-        ).decode('utf-8')
-        salt = os.urandom(16)
-        kdf = PBKDF2HMAC(
-            algorithm=hashes.SHA256(),
-            length=32,
-            salt=salt,
-            iterations=100000,
-        )
-        key = kdf.derive(password.encode())
-        private_key_pem = private_key.private_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PrivateFormat.PKCS8,
-            encryption_algorithm=serialization.NoEncryption()
-        )
-        user.encrypted_private_key = base64.b64encode(encrypt_aes(private_key_pem, key)).decode()
-        user.key_salt = salt
-        aes_key = settings.AES_ENCRYPTION_KEY.encode() if isinstance(settings.AES_ENCRYPTION_KEY, str) else settings.AES_ENCRYPTION_KEY
-        user.encrypted_email = encrypt_aes(self.cleaned_data['email'].encode(), aes_key)
+    def clean(self):
+        data = super().clean()
+        p1 = data.get("password1")
+        p2 = data.get("password2")
+        if not p1 or not p2 or p1 != p2:
+            raise ValidationError("Passwords do not match.")
+        if len(p1) < 8:
+            raise ValidationError("Password must be at least 8 characters.")
+        return data
+
+    def save(self, commit: bool = True) -> CustomUser:
+        user: CustomUser = super().save(commit=False)
+        password = self.cleaned_data["password1"]
+        user.set_password(password)
+        user.set_kdf_salt()
+
         if commit:
+            # 1) Save first to ensure we have a primary key for AAD
             user.save()
+            # 2) Now generate RSA and store encrypted private key (AAD includes uid)
+            user.generate_rsa_and_store(password)
+            # 3) Persist the key fields
+            user.save(update_fields=["public_key", "encrypted_private_key", "kdf_salt", "password"])
+        else:
+            # Fallback path (rare): generate keys without a pk in AAD (uses uid=-1)
+            user.generate_rsa_and_store(password)
+
         return user
 
-class CustomAuthenticationForm(AuthenticationForm):
-    def clean(self):
-        username = self.cleaned_data.get('username')
-        password = self.cleaned_data.get('password')
-        if username and password:
-            self.user_cache = authenticate(self.request, username=username, password=password)
-            if self.user_cache is None:
-                raise forms.ValidationError(
-                    self.error_messages['invalid_login'],
-                    code='invalid_login',
-                    params={'username': self.username_field.verbose_name},
-                )
-        return self.cleaned_data
 
-class FriendRequestForm(forms.ModelForm):
-    class Meta:
-        model = FriendRequest
-        fields = ['receiver']
-        widgets = {
-            'receiver': forms.Select(attrs={'class': 'form-control'}),
-        }
-
-    def __init__(self, *args, **kwargs):
-        user = kwargs.pop('user', None)
-        super().__init__(*args, **kwargs)
-        if user:
-            self.fields['receiver'].queryset = CustomUser.objects.exclude(id=user.id)
+class LoginForm(AuthenticationForm):
+    """
+    Uses Django's built-in auth validation.
+    """
+    username = forms.CharField()
+    password = forms.CharField(widget=forms.PasswordInput)

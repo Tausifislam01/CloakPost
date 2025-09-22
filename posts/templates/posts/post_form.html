@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Post{% endblock %}
+{% block content %}
+  <h2>{% if form.instance.pk %}Edit Post{% else %}Create Post{% endif %}</h2>
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <p>
+      <label for="id_content">Content:</label>
+      <textarea name="content" id="id_content" rows="5">{{ form.initial.content }}</textarea>
+    </p>
+    <button type="submit">Save</button>
+  </form>
+{% endblock %}
