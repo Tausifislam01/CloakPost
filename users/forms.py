@@ -4,11 +4,11 @@ from .models import CustomUser, FriendRequest
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-from cryptography.fernet import Fernet
 import base64
 import os
 from django.conf import settings
 from django.contrib.auth import authenticate
+from CloakPost.key_management import encrypt_aes
 
 class CustomUserCreationForm(UserCreationForm):
     class Meta:
@@ -31,17 +31,16 @@ class CustomUserCreationForm(UserCreationForm):
             salt=salt,
             iterations=100000,
         )
-        key = base64.urlsafe_b64encode(kdf.derive(password.encode()))
-        cipher = Fernet(key)
+        key = kdf.derive(password.encode())
         private_key_pem = private_key.private_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PrivateFormat.PKCS8,
             encryption_algorithm=serialization.NoEncryption()
         )
-        user.encrypted_private_key = cipher.encrypt(private_key_pem)
+        user.encrypted_private_key = base64.b64encode(encrypt_aes(private_key_pem, key)).decode()
         user.key_salt = salt
-        master_cipher = Fernet(settings.DATA_ENCRYPTION_KEY.encode())
-        user.encrypted_email = master_cipher.encrypt(self.cleaned_data['email'].encode())
+        aes_key = settings.AES_ENCRYPTION_KEY.encode() if isinstance(settings.AES_ENCRYPTION_KEY, str) else settings.AES_ENCRYPTION_KEY
+        user.encrypted_email = encrypt_aes(self.cleaned_data['email'].encode(), aes_key)
         if commit:
             user.save()
         return user
