@@ -9,7 +9,10 @@ class Message(models.Model):
     encrypted_content = models.BinaryField()
     timestamp = models.DateTimeField(auto_now_add=True)
 
-    def encrypt_content(self, content, recipient_public_key):
+    def __str__(self) -> str:
+        return f"Message #{self.pk} from {self.sender} to {self.recipient}"
+
+    def encrypt_content(self, content: str, recipient_public_key: str) -> None:
         public_key = serialization.load_pem_public_key(recipient_public_key.encode())
         encrypted = public_key.encrypt(
             content.encode(),
@@ -21,7 +24,7 @@ class Message(models.Model):
         )
         self.encrypted_content = encrypted
 
-    def decrypt_content(self, private_key):
+    def decrypt_content(self, private_key) -> str:
         decrypted = private_key.decrypt(
             self.encrypted_content,
             padding.OAEP(
