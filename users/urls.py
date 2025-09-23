@@ -1,27 +1,15 @@
 from django.urls import path
-from . import views
-from .views import (
-    home,
-    register,
-    login_view,
-    logout_view,
-    profile_view,
-    send_friend_request,
-    friend_requests,
-    accept_friend_request,
-    reject_friend_request,
-    
-)
+from . import views  # <-- this is YOUR app's views module
 
 urlpatterns = [
-    path("", home, name="home"),
-    path("register/", register, name="register"),
-    path("login/", login_view, name="login"),
-    path("logout/", logout_view, name="logout"),
-    path("u/<str:username>/", profile_view, name="profile"),
-    path("u/<str:username>/add", send_friend_request, name="send_friend_request"),
-    path("friends/requests/", friend_requests, name="friend_requests"),
-    path("friends/requests/<int:fr_id>/accept", accept_friend_request, name="accept_friend_request"),
-    path("friends/requests/<int:fr_id>/reject", reject_friend_request, name="reject_friend_request"),
+    path("", views.home, name="home"),
+    path("register/", views.register, name="register"),
+    path("login/", views.login_view, name="login"),
+    path("logout/", views.logout_view, name="logout"),
+    path("u/<str:username>/", views.profile_view, name="profile"),
+    path("u/<str:username>/add", views.send_friend_request, name="send_friend_request"),
+    path("friends/requests/", views.friend_requests, name="friend_requests"),
+    path("friends/requests/<int:fr_id>/accept", views.accept_friend_request, name="accept_friend_request"),
+    path("friends/requests/<int:fr_id>/reject", views.reject_friend_request, name="reject_friend_request"),
     path("search/", views.search_users, name="search_users"),
 ]
