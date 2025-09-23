@@ -1,5 +1,5 @@
 from django.urls import path
-from django.contrib.auth import views
+from . import views
 from .views import (
     home,
     register,
@@ -10,7 +10,7 @@ from .views import (
     friend_requests,
     accept_friend_request,
     reject_friend_request,
-    search_users,
+    
 )
 
 urlpatterns = [
