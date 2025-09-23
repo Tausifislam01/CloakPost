@@ -13,6 +13,8 @@
         <a href="{% url 'profile' username=user.username %}">{{ user.username }}</a>
         <a href="{% url 'friend_requests' %}">Friend Requests</a>
         <a href="{% url 'logout' %}">Logout</a>
+        <a href="{% url 'search_users' %}">Find Friends</a>
+
       {% else %}
         <a href="{% url 'login' %}">Login</a>
         <a href="{% url 'register' %}">Register</a>

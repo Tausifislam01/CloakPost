@@ -1,4 +1,5 @@
 from django.urls import path
+from django.contrib.auth import views
 from .views import (
     home,
     register,
@@ -9,6 +10,7 @@ from .views import (
     friend_requests,
     accept_friend_request,
     reject_friend_request,
+    search_users,
 )
 
 urlpatterns = [
@@ -21,4 +23,5 @@ urlpatterns = [
     path("friends/requests/", friend_requests, name="friend_requests"),
     path("friends/requests/<int:fr_id>/accept", accept_friend_request, name="accept_friend_request"),
     path("friends/requests/<int:fr_id>/reject", reject_friend_request, name="reject_friend_request"),
+    path("search/", views.search_users, name="search_users"),
 ]

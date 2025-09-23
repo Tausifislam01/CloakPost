@@ -9,6 +9,10 @@ from django.db import IntegrityError
 from .models import CustomUser, FriendRequest
 from .forms import CustomUserCreationForm, LoginForm
 
+from django.shortcuts import render
+from django.contrib.auth import get_user_model
+from django.contrib.auth.decorators import login_required
+
 
 def home(request):
     return render(request, "users/home.html")
@@ -117,3 +121,14 @@ def reject_friend_request(request, fr_id: int):
     fr.save()
     dj_messages.info(request, "Friend request rejected.")
     return redirect("friend_requests")
+
+
+User = get_user_model()
+
+@login_required
+def search_users(request):
+    query = request.GET.get("q", "")
+    results = []
+    if query:
+        results = User.objects.filter(username__icontains=query).exclude(id=request.user.id)
+    return render(request, "users/search.html", {"query": query, "results": results})

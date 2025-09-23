@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Find Friends</h2>
+<form method="get">
+  <input type="text" name="q" placeholder="Search by username" value="{{ query }}">
+  <button type="submit">Search</button>
+</form>
+
+{% if results %}
+  <ul>
+    {% for u in results %}
+      <li>
+        {{ u.username }}
+        <a href="{% url 'add_friend' u.username %}">Send Friend Request</a>
+      </li>
+    {% endfor %}
+  </ul>
+{% elif query %}
+  <p>No users found.</p>
+{% endif %}
+{% endblock %}
