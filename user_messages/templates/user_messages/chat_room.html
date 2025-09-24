@@ -1,35 +1,163 @@
 {% extends "base.html" %}
-{% block title %}Chat with {{ peer.username }}{% endblock %}
+{% block title %}Chat with {{ peer.username }} • CloakPost{% endblock %}
+
 {% block content %}
-  <h2>Chat with {{ peer.username }}</h2>
+<h2>Chat with {{ peer.username }}</h2>
 
-  <div id="chat-log" style="border:1px solid #ccc; height:200px; overflow-y:auto; margin-bottom:10px;"></div>
+<section style="margin-bottom:1rem;">
+  <details {% if request.GET.auto %}open{% endif %}>
+    <summary><strong>Unlock (remember in this tab)</strong></summary>
+    <div style="margin-top:0.5rem;">
+      <label for="unlockPassword">Password</label>
+      <input id="unlockPassword" type="password" autocomplete="current-password" />
+      <label style="display:inline-flex; align-items:center; gap:.5rem; margin-left:.5rem;">
+        <input id="rememberTab" type="checkbox" />
+        Remember until this tab closes
+      </label>
+      <button id="unlockBtn" type="button">Unlock</button>
+      <small id="unlockStatus" style="display:block;margin-top:.25rem;"></small>
+    </div>
+  </details>
+</section>
 
-  <input id="chat-input" type="text" placeholder="Type a message…" style="width:80%;">
-  <button id="chat-send">Send</button>
+<div id="log" style="height:40vh; overflow:auto; border:1px solid #ddd; padding:.5rem; margin-bottom:1rem;"></div>
 
-  <script>
-    const roomUrl = "ws://" + window.location.host + "/ws/chat/{{ peer.id }}/";
-    const socket = new WebSocket(roomUrl.replace("http","ws"));
+<div style="display:flex; gap:.5rem;">
+  <input id="msgInput" type="text" placeholder="Type a message…" style="flex:1;" />
+  <button id="sendBtn" type="button" disabled>Send</button>
+</div>
 
-    const log = document.getElementById("chat-log");
-    const input = document.getElementById("chat-input");
-    const sendBtn = document.getElementById("chat-send");
+<script>
+(function () {
+  const log = document.getElementById("log");
+  const msgInput = document.getElementById("msgInput");
+  const sendBtn = document.getElementById("sendBtn");
+  const unlockBtn = document.getElementById("unlockBtn");
+  const unlockPasswordEl = document.getElementById("unlockPassword");
+  const rememberTabEl = document.getElementById("rememberTab");
+  const unlockStatus = document.getElementById("unlockStatus");
 
-    socket.onmessage = function(e) {
-      const data = JSON.parse(e.data);
-      if (data.type === "message") {
-        const el = document.createElement("div");
-        el.textContent = (data.plaintext || "[Encrypted]") + " (" + data.sender_id + ")";
-        log.appendChild(el);
+  // Persist password only in this TAB (sessionStorage). Close tab → cleared.
+  const TAB_PW_KEY = "cloakpost_dm_pw_{{ peer.id }}";
+
+  // helpers
+  function addLine(text) {
+    const d = document.createElement("div");
+    d.textContent = text;
+    log.appendChild(d);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function scheme() {
+    return window.location.protocol === "https:" ? "wss" : "ws";
+  }
+
+  let socket = null;
+  let reconnectTimer = null;
+
+  function connectSocket() {
+    const wsUrl = `${scheme()}://${window.location.host}/ws/chat/{{ peer.id }}/`;
+    socket = new WebSocket(wsUrl);
+
+    socket.onopen = () => {
+      addLine("[Connected]");
+      // auto-unlock if we have a tab password
+      const pw = sessionStorage.getItem(TAB_PW_KEY);
+      if (pw) {
+        sendUnlock(pw, true);
       }
     };
 
-    sendBtn.onclick = function() {
-      const text = input.value.trim();
-      if (!text) return;
-      socket.send(JSON.stringify({ action: "send_message", text }));
-      input.value = "";
+    socket.onclose = () => {
+      addLine("[Disconnected]");
+      // simple retry after 1.5s if the page is still open
+      clearTimeout(reconnectTimer);
+      reconnectTimer = setTimeout(connectSocket, 1500);
     };
-  </script>
+
+    socket.onerror = () => {
+      addLine("[Error: check login/origin]");
+    };
+
+    socket.onmessage = (evt) => {
+      try {
+        const data = JSON.parse(evt.data);
+        if (data.type === "chat.message") {
+          if (data.plaintext) {
+            addLine(`${data.sender_username || data.sender_id}: ${data.plaintext}`);
+          } else {
+            addLine(`[Encrypted/Locked] from ${data.sender_username || data.sender_id}`);
+          }
+        } else if (data.type === "unlock.ok") {
+          unlockStatus.textContent = "Unlocked for this tab.";
+        } else if (data.type === "unlock.fail") {
+          unlockStatus.textContent = "Unlock failed. Check your password.";
+        }
+      } catch (e) {
+        addLine(evt.data);
+      }
+    };
+  }
+
+  function sendUnlock(pw, silent=false) {
+    if (!socket || socket.readyState !== 1) return;
+    try {
+      socket.send(JSON.stringify({ action: "unlock", password: pw }));
+      if (!silent) {
+        unlockStatus.textContent = "Unlocking…";
+      }
+    } catch (e) {
+      if (!silent) unlockStatus.textContent = "Unable to send unlock request.";
+    }
+  }
+
+  function sendMessage() {
+    const text = msgInput.value.trim();
+    if (!text || !socket || socket.readyState !== 1) return;
+    socket.send(JSON.stringify({ action: "send_message", content: text }));
+    msgInput.value = "";
+    sendBtn.disabled = true;
+  }
+
+  // UI wiring
+  msgInput.addEventListener("input", () => {
+    sendBtn.disabled = !msgInput.value.trim();
+  });
+
+  msgInput.addEventListener("keyup", (e) => {
+    if (e.key === "Enter") {
+      sendMessage();
+    }
+  });
+
+  sendBtn.addEventListener("click", sendMessage);
+
+  unlockBtn.addEventListener("click", () => {
+    const pw = unlockPasswordEl.value;
+    if (!pw) {
+      unlockStatus.textContent = "Enter your password.";
+      return;
+    }
+    if (rememberTabEl.checked) {
+      sessionStorage.setItem(TAB_PW_KEY, pw);
+    } else {
+      sessionStorage.removeItem(TAB_PW_KEY);
+    }
+    sendUnlock(pw);
+  });
+
+  // Optional: if you want auto-open of the details when we have a stored pw:
+  if (sessionStorage.getItem(TAB_PW_KEY)) {
+    unlockPasswordEl.value = sessionStorage.getItem(TAB_PW_KEY);
+  }
+
+  // connect
+  connectSocket();
+
+  // clean up on unload
+  window.addEventListener("beforeunload", () => {
+    try { socket && socket.close(); } catch (e) {}
+  });
+})();
+</script>
 {% endblock %}

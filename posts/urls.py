@@ -1,9 +1,10 @@
 from django.urls import path
-from .views import post_list, post_create, post_edit, post_delete
+from . import views
 
+# posts/urls.py
 urlpatterns = [
-    path('', post_list, name='post_list'),
-    path('create/', post_create, name='post_create'),
-    path('<int:pk>/edit/', post_edit, name='post_edit'),
-    path('<int:pk>/delete/', post_delete, name='post_delete'),
+    path("", views.post_list, name="post_list"),
+    path("create/", views.post_create, name="create_post"),  # renamed
+    path("<uuid:pk>/edit/", views.post_edit, name="edit_post"),
+    path("<uuid:pk>/delete/", views.post_delete, name="delete_post"),
 ]

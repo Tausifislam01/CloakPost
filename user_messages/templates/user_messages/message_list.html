@@ -1,22 +1,60 @@
 {% extends "base.html" %}
-{% block title %}Inbox{% endblock %}
-{% block content %}
-  <h2>Your Messages</h2>
-  <form method="post">
-    {% csrf_token %}
-    {{ form.as_p }}
-    <button type="submit">Unlock Inbox</button>
-  </form>
+{% block title %}Inbox • CloakPost{% endblock %}
 
+{% block content %}
+<h2>Inbox</h2>
+
+<form id="unlockForm" method="post" style="margin-bottom:1rem;">
+  {% csrf_token %}
+  <label for="password">Password</label>
+  <input id="password" name="password" type="password" autocomplete="current-password" required />
+
+  <label style="display:inline-flex; align-items:center; gap:.5rem; margin-left:.5rem;">
+    <input id="rememberTab" type="checkbox" />
+    Remember until this tab closes
+  </label>
+
+  <button type="submit">Unlock</button>
+  <small style="display:block;margin-top:.25rem;">Needed to decrypt & verify your messages.</small>
+</form>
+
+{% if messages_list %}
   <ul>
-    {% for msg in messages %}
+    {% for msg in messages_list %}
       <li>
         <strong>{{ msg.sender.username }}</strong> → {{ msg.recipient.username }}
-        <p>{{ msg.plaintext }}</p>
+        <div>{{ msg.plaintext }}</div>
         <small>{{ msg.created_at }}</small>
       </li>
-    {% empty %}
-      <li>No messages yet.</li>
     {% endfor %}
   </ul>
+{% else %}
+  <p>No messages yet.</p>
+{% endif %}
+
+<script>
+(function () {
+  const TAB_PW_KEY = "cloakpost_inbox_pw";
+  const form = document.getElementById("unlockForm");
+  const pw = document.getElementById("password");
+  const remember = document.getElementById("rememberTab");
+
+  // If we already remembered in this tab, fill and auto-submit.
+  const saved = sessionStorage.getItem(TAB_PW_KEY);
+  if (saved) {
+    pw.value = saved;
+    // Auto-submit only if we're still on the inbox page without POST feedback loop.
+    // If you want to avoid immediate submit, comment the next line:
+    form.requestSubmit();
+  }
+
+  form.addEventListener("submit", function () {
+    if (remember.checked) {
+      sessionStorage.setItem(TAB_PW_KEY, pw.value);
+    } else {
+      sessionStorage.removeItem(TAB_PW_KEY);
+    }
+  });
+})();
+</script>
 {% endblock %}

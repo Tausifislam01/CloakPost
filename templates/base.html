@@ -3,7 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <title>{% block title %}CloakPost{% endblock %}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  {% load static %}
   <link rel="stylesheet" href="https://cdn.simplecss.org/simple.min.css">
+  <!-- Optional: <link rel="icon" href="{% static 'img/favicon.ico' %}"> -->
 </head>
 <body>
   <header>
@@ -12,9 +15,19 @@
       {% if user.is_authenticated %}
         <a href="{% url 'profile' username=user.username %}">{{ user.username }}</a>
         <a href="{% url 'friend_requests' %}">Friend Requests</a>
-        <a href="{% url 'logout' %}">Logout</a>
         <a href="{% url 'search_users' %}">Find Friends</a>
 
+        <!-- Optional global links (uncomment if desired) -->
+        {# <a href="{% url 'message_list' %}">Inbox</a> #}
+        {# <a href="{% url 'send_message' %}">Compose</a> #}
+        {# <a href="{% url 'post_list' %}">Posts</a> #}
+        {# <a href="{% url 'post_create' %}">New Post</a> #}
+
+        <!-- Prefer POST for logout (adjust if your route accepts GET) -->
+        <form method="post" action="{% url 'logout' %}" style="display:inline;">
+          {% csrf_token %}
+          <button type="submit" style="background:none;border:none;padding:0;cursor:pointer;">Logout</button>
+        </form>
       {% else %}
         <a href="{% url 'login' %}">Login</a>
         <a href="{% url 'register' %}">Register</a>
@@ -25,7 +38,7 @@
   {% if messages %}
     <ul class="messages">
       {% for message in messages %}
-        <li>{{ message }}</li>
+        <li class="{{ message.tags|default:'' }}">{{ message }}</li>
       {% endfor %}
     </ul>
   {% endif %}
