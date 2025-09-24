@@ -1,18 +1,23 @@
 {% extends "base.html" %}
-{% block title %}Profile{% endblock %}
-{% block content %}
-  <h2>Profile: {{ profile_user.username }}</h2>
+{% block title %}Profile • CloakPost{% endblock %}
 
-  {% if is_self %}
-    <p>This is your profile.</p>
+{% block content %}
+<h2>Profile: {{ profile_user.username }}</h2>
+
+{% if is_self %}
+  <p>This is your profile.</p>
+{% else %}
+  {% if is_friend %}
+    <p>You and {{ profile_user.username }} are friends.</p>
+    <form method="post" action="{% url 'remove_friend' username=profile_user.username %}">
+      {% csrf_token %}
+      <button type="submit">Remove Friend</button>
+    </form>
   {% else %}
-    {% if is_friend %}
-      <p>You and {{ profile_user.username }} are friends.</p>
-    {% else %}
-      <form method="post" action="{% url 'send_friend_request' username=profile_user.username %}">
-        {% csrf_token %}
-        <button type="submit">Send Friend Request</button>
-      </form>
-    {% endif %}
+    <form method="post" action="{% url 'send_friend_request' username=profile_user.username %}">
+      {% csrf_token %}
+      <button type="submit">Send Friend Request</button>
+    </form>
   {% endif %}
+{% endif %}
 {% endblock %}

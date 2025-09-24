@@ -12,6 +12,7 @@ from .forms import CustomUserCreationForm, LoginForm
 from django.shortcuts import render
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
+from django.views.decorators.http import require_POST
 
 
 def home(request):
@@ -132,3 +133,15 @@ def search_users(request):
     if query:
         results = User.objects.filter(username__icontains=query).exclude(id=request.user.id)
     return render(request, "users/search.html", {"query": query, "results": results})
+
+@login_required
+@require_POST
+def remove_friend(request, username: str):
+    other = get_object_or_404(CustomUser, username=username)
+    if request.user.friends.filter(id=other.id).exists():
+        request.user.friends.remove(other)
+        other.friends.remove(request.user)
+        dj_messages.info(request, f"You removed {other.username} from friends.")
+    else:
+        dj_messages.info(request, "You are not friends.")
+    return redirect("profile", username=other.username)
