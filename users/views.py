@@ -16,7 +16,7 @@ from django.views.decorators.http import require_POST
 
 
 def home(request):
-    return render(request, "users/home.html")
+    return render(request, "home.html")
 
 
 def register(request):
