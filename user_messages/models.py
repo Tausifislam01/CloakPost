@@ -1,184 +1,78 @@
 from django.db import models
 from django.conf import settings
-
-from cryptography.hazmat.primitives.asymmetric import padding, rsa
-from cryptography.hazmat.primitives import serialization, hashes
-from cryptography.exceptions import InvalidSignature
-
-from CloakPost.key_management import encrypt_aes, decrypt_aes
-
+from django.utils import timezone
+from django.core.exceptions import ValidationError
+from django.db.models import Q
+from users.models import CustomUser
+from CloakPost.key_management import encrypt_aes, decrypt_aes, load_aes_key
 import secrets
-import base64
+
+class FriendshipKey(models.Model):
+    """
+    Channel (symmetric) key per friendship pair.
+    Stored encrypted with the app's AES_ENCRYPTION_KEY (AES-256-GCM).
+    """
+    user_low = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
+    user_high = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
+    encrypted_channel_key = models.BinaryField()  # iv+ciphertext+tag
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        unique_together = (("user_low", "user_high"),)
+
+    @staticmethod
+    def _order_pair(a: CustomUser, b: CustomUser):
+        return (a, b) if a.id < b.id else (b, a)
+
+    @classmethod
+    def get_or_create_for_pair(cls, a: CustomUser, b: CustomUser) -> "FriendshipKey":
+        u1, u2 = cls._order_pair(a, b)
+        fk = cls.objects.filter(user_low=u1, user_high=u2).first()
+        if fk:
+            return fk
+        # Generate a fresh 32-byte channel key
+        channel_key = secrets.token_bytes(32)
+        # Encrypt with app master AES key (associated_data binds to the duo)
+        master = load_aes_key()
+        aad = f"dm_channel_{u1.id}_{u2.id}".encode()
+        blob = encrypt_aes(channel_key, master, associated_data=aad)
+        return cls.objects.create(user_low=u1, user_high=u2, encrypted_channel_key=blob)
+
+    @classmethod
+    def delete_for_pair(cls, a: CustomUser, b: CustomUser):
+        u1, u2 = cls._order_pair(a, b)
+        cls.objects.filter(user_low=u1, user_high=u2).delete()
+
+    @classmethod
+    def get_channel_key(cls, a: CustomUser, b: CustomUser) -> bytes:
+        u1, u2 = cls._order_pair(a, b)
+        fk = cls.objects.filter(user_low=u1, user_high=u2).first()
+        if not fk:
+            raise ValidationError("No channel key for this pair.")
+        master = load_aes_key()
+        aad = f"dm_channel_{u1.id}_{u2.id}".encode()
+        return decrypt_aes(bytes(fk.encrypted_channel_key), master, associated_data=aad)
 
 
 class Message(models.Model):
-    """
-    Hybrid-encrypted direct message:
-      - AES-256-GCM encrypts the content (random 32-byte key)
-      - RSA-OAEP (SHA-256) encrypts the AES key to the recipient
-      - RSA-PSS (SHA-256) signs a stable transcript for authenticity
+    sender = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="sent_messages")
+    recipient = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="received_messages")
+    encrypted_content = models.BinaryField()  # iv+ciphertext+tag (AES-GCM under channel key)
+    created_at = models.DateTimeField(default=timezone.now)
 
-    Stored fields are BINARY (no plaintext at rest):
-      - encrypted_key: RSA-OAEP ciphertext of the AES key
-      - encrypted_content: AES-GCM blob (iv + ciphertext + tag)
-      - signature: RSA-PSS signature over the transcript
-    """
-    sender = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        related_name="sent_messages",
-        on_delete=models.CASCADE,
-    )
-    recipient = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        related_name="received_messages",
-        on_delete=models.CASCADE,
-    )
+    class Meta:
+        indexes = [models.Index(fields=["recipient", "created_at"]), models.Index(fields=["sender", "created_at"])]
 
-    # RSA-encrypted AES key (Binary)
-    encrypted_key = models.BinaryField()
+    def encrypt_with_channel(self, plaintext: str):
+        key = FriendshipKey.get_channel_key(self.sender, self.recipient)
+        aad = f"msg_{min(self.sender_id, self.recipient_id)}_{max(self.sender_id, self.recipient_id)}".encode()
+        self.encrypted_content = encrypt_aes(plaintext.encode("utf-8"), key, associated_data=aad)
 
-    # AES-GCM blob: iv (12B) + ciphertext + tag (16B)
-    encrypted_content = models.BinaryField()
-
-    # RSA-PSS signature over transcript (Binary)
-    signature = models.BinaryField()
-
-    timestamp = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self) -> str:
-        return f"Message #{self.pk} from {self.sender} to {self.recipient}"
-
-    # ---------------------------------------------------------------------
-    # Helpers (no DB changes)
-    # ---------------------------------------------------------------------
-
-    @property
-    def encrypted_key_b64(self) -> str:
-        """Base64 view for JSON/WebSocket payloads."""
-        return base64.b64encode(self.encrypted_key).decode()
-
-    @property
-    def encrypted_content_b64(self) -> str:
-        """Base64 view for JSON/WebSocket payloads."""
-        return base64.b64encode(self.encrypted_content).decode()
-
-    @property
-    def signature_b64(self) -> str:
-        """Base64 view for JSON/WebSocket payloads."""
-        return base64.b64encode(self.signature).decode()
-
-    # ---------------------------------------------------------------------
-    # Crypto core
-    # ---------------------------------------------------------------------
-
-    def _transcript(self) -> bytes:
-        """
-        Stable bytes to sign/verify:
-
-            sender_id | recipient_id | encrypted_key | encrypted_content
-
-        This binds the signature to the identity tuple and the exact ciphertexts.
-        """
-        sid = str(self.sender_id).encode()
-        rid = str(self.recipient_id).encode()
-        return b"|".join([sid, rid, self.encrypted_key, self.encrypted_content])
-
-    def encrypt_and_sign(
-        self,
-        content: str,
-        recipient_public_key_pem: str,
-        sender_private_key,
-    ) -> None:
-        """
-        Hybrid encryption + sender authenticity:
-
-        1) Generate random 32-byte AES key.
-        2) Encrypt content with AES-256-GCM -> iv + ciphertext + tag.
-        3) Encrypt AES key to recipient using RSA-OAEP(SHA-256).
-        4) Sign transcript with sender RSA-PSS(SHA-256).
-
-        Args:
-            content: plaintext message to encrypt.
-            recipient_public_key_pem: PEM string of the recipient's RSA public key.
-            sender_private_key: a cryptography RSA private key object
-                                (already decrypted/unlocked in-memory).
-        """
-        # 1) Random symmetric key
-        sym_key = secrets.token_bytes(32)
-
-        # 2) Encrypt message with AES-256-GCM
-        blob = encrypt_aes(content.encode(), sym_key)
-
-        # 3) Encrypt symmetric key to recipient (RSA-OAEP)
-        public_key = serialization.load_pem_public_key(
-            recipient_public_key_pem.encode()
-        )
-        encrypted_sym_key = public_key.encrypt(
-            sym_key,
-            padding.OAEP(
-                mgf=padding.MGF1(algorithm=hashes.SHA256()),
-                algorithm=hashes.SHA256(),
-                label=None,
-            ),
-        )
-
-        self.encrypted_key = encrypted_sym_key
-        self.encrypted_content = blob
-
-        # 4) Sign transcript with sender's private key (RSA-PSS)
-        signature = sender_private_key.sign(
-            self._transcript(),
-            padding.PSS(
-                mgf=padding.MGF1(hashes.SHA256()),
-                salt_length=padding.PSS.MAX_LENGTH,
-            ),
-            hashes.SHA256(),
-        )
-        self.signature = signature
-
-    def verify_signature(self) -> bool:
-        """
-        Verify RSA-PSS signature using sender's public key (stored in DB as PEM).
-        Returns:
-            True if signature is valid, else False.
-        """
+    def decrypt_with_channel(self) -> str | None:
         try:
-            public_key = serialization.load_pem_public_key(
-                self.sender.public_key.encode()
-            )
-            public_key.verify(
-                self.signature,
-                self._transcript(),
-                padding.PSS(
-                    mgf=padding.MGF1(hashes.SHA256()),
-                    salt_length=padding.PSS.MAX_LENGTH,
-                ),
-                hashes.SHA256(),
-            )
-            return True
-        except (InvalidSignature, ValueError, TypeError):
-            return False
-
-    def decrypt_content(self, private_key) -> str:
-        """
-        Decrypt the hybrid-encrypted message:
-
-        1) RSA-OAEP decrypt the symmetric AES key with recipient's private key.
-        2) AES-GCM decrypt the content blob.
-
-        Args:
-            private_key: a cryptography RSA private key object belonging to the recipient.
-
-        Returns:
-            Decrypted plaintext as UTF-8 string.
-        """
-        sym_key = private_key.decrypt(
-            self.encrypted_key,
-            padding.OAEP(
-                mgf=padding.MGF1(algorithm=hashes.SHA256()),
-                algorithm=hashes.SHA256(),
-                label=None,
-            ),
-        )
-        pt = decrypt_aes(self.encrypted_content, sym_key)
-        return pt.decode()
+            key = FriendshipKey.get_channel_key(self.sender, self.recipient)
+            aad = f"msg_{min(self.sender_id, self.recipient_id)}_{max(self.sender_id, self.recipient_id)}".encode()
+            pt = decrypt_aes(bytes(self.encrypted_content), key, associated_data=aad)
+            return pt.decode("utf-8", errors="replace")
+        except Exception:
+            return None

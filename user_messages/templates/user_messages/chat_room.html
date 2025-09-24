@@ -4,22 +4,6 @@
 {% block content %}
 <h2>Chat with {{ peer.username }}</h2>
 
-<section style="margin-bottom:1rem;">
-  <details {% if request.GET.auto %}open{% endif %}>
-    <summary><strong>Unlock (remember in this tab)</strong></summary>
-    <div style="margin-top:0.5rem;">
-      <label for="unlockPassword">Password</label>
-      <input id="unlockPassword" type="password" autocomplete="current-password" />
-      <label style="display:inline-flex; align-items:center; gap:.5rem; margin-left:.5rem;">
-        <input id="rememberTab" type="checkbox" />
-        Remember until this tab closes
-      </label>
-      <button id="unlockBtn" type="button">Unlock</button>
-      <small id="unlockStatus" style="display:block;margin-top:.25rem;"></small>
-    </div>
-  </details>
-</section>
-
 <div id="log" style="height:40vh; overflow:auto; border:1px solid #ddd; padding:.5rem; margin-bottom:1rem;"></div>
 
 <div style="display:flex; gap:.5rem;">
@@ -32,15 +16,7 @@
   const log = document.getElementById("log");
   const msgInput = document.getElementById("msgInput");
   const sendBtn = document.getElementById("sendBtn");
-  const unlockBtn = document.getElementById("unlockBtn");
-  const unlockPasswordEl = document.getElementById("unlockPassword");
-  const rememberTabEl = document.getElementById("rememberTab");
-  const unlockStatus = document.getElementById("unlockStatus");
 
-  // Persist password only in this TAB (sessionStorage). Close tab → cleared.
-  const TAB_PW_KEY = "cloakpost_dm_pw_{{ peer.id }}";
-
-  // helpers
   function addLine(text) {
     const d = document.createElement("div");
     d.textContent = text;
@@ -53,62 +29,27 @@
   }
 
   let socket = null;
-  let reconnectTimer = null;
+  let retry = null;
 
-  function connectSocket() {
-    const wsUrl = `${scheme()}://${window.location.host}/ws/chat/{{ peer.id }}/`;
-    socket = new WebSocket(wsUrl);
-
-    socket.onopen = () => {
-      addLine("[Connected]");
-      // auto-unlock if we have a tab password
-      const pw = sessionStorage.getItem(TAB_PW_KEY);
-      if (pw) {
-        sendUnlock(pw, true);
-      }
-    };
-
+  function connect() {
+    socket = new WebSocket(`${scheme()}://${window.location.host}/ws/chat/{{ peer.id }}/`);
+    socket.onopen = () => addLine("[Connected]");
     socket.onclose = () => {
       addLine("[Disconnected]");
-      // simple retry after 1.5s if the page is still open
-      clearTimeout(reconnectTimer);
-      reconnectTimer = setTimeout(connectSocket, 1500);
+      clearTimeout(retry);
+      retry = setTimeout(connect, 1500);
     };
-
-    socket.onerror = () => {
-      addLine("[Error: check login/origin]");
-    };
-
+    socket.onerror = () => addLine("[Error]");
     socket.onmessage = (evt) => {
       try {
         const data = JSON.parse(evt.data);
         if (data.type === "chat.message") {
-          if (data.plaintext) {
-            addLine(`${data.sender_username || data.sender_id}: ${data.plaintext}`);
-          } else {
-            addLine(`[Encrypted/Locked] from ${data.sender_username || data.sender_id}`);
-          }
-        } else if (data.type === "unlock.ok") {
-          unlockStatus.textContent = "Unlocked for this tab.";
-        } else if (data.type === "unlock.fail") {
-          unlockStatus.textContent = "Unlock failed. Check your password.";
+          addLine(`${data.sender_username}: ${data.plaintext}`);
         }
-      } catch (e) {
+      } catch {
         addLine(evt.data);
       }
     };
-  }
-
-  function sendUnlock(pw, silent=false) {
-    if (!socket || socket.readyState !== 1) return;
-    try {
-      socket.send(JSON.stringify({ action: "unlock", password: pw }));
-      if (!silent) {
-        unlockStatus.textContent = "Unlocking…";
-      }
-    } catch (e) {
-      if (!silent) unlockStatus.textContent = "Unable to send unlock request.";
-    }
   }
 
   function sendMessage() {
@@ -119,45 +60,11 @@
     sendBtn.disabled = true;
   }
 
-  // UI wiring
-  msgInput.addEventListener("input", () => {
-    sendBtn.disabled = !msgInput.value.trim();
-  });
-
-  msgInput.addEventListener("keyup", (e) => {
-    if (e.key === "Enter") {
-      sendMessage();
-    }
-  });
-
+  msgInput.addEventListener("input", () => { sendBtn.disabled = !msgInput.value.trim(); });
+  msgInput.addEventListener("keyup", (e) => { if (e.key === "Enter") sendMessage(); });
   sendBtn.addEventListener("click", sendMessage);
 
-  unlockBtn.addEventListener("click", () => {
-    const pw = unlockPasswordEl.value;
-    if (!pw) {
-      unlockStatus.textContent = "Enter your password.";
-      return;
-    }
-    if (rememberTabEl.checked) {
-      sessionStorage.setItem(TAB_PW_KEY, pw);
-    } else {
-      sessionStorage.removeItem(TAB_PW_KEY);
-    }
-    sendUnlock(pw);
-  });
-
-  // Optional: if you want auto-open of the details when we have a stored pw:
-  if (sessionStorage.getItem(TAB_PW_KEY)) {
-    unlockPasswordEl.value = sessionStorage.getItem(TAB_PW_KEY);
-  }
-
-  // connect
-  connectSocket();
-
-  // clean up on unload
-  window.addEventListener("beforeunload", () => {
-    try { socket && socket.close(); } catch (e) {}
-  });
+  connect();
 })();
 </script>
 {% endblock %}

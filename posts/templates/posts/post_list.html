@@ -1,21 +1,31 @@
 {% extends "base.html" %}
-{% block title %}Posts{% endblock %}
+{% block title %}Posts • CloakPost{% endblock %}
+
 {% block content %}
-  <h2>All Posts</h2>
-  <a href="{% url 'post_create' %}">+ New Post</a>
+<h2>Your Feed</h2>
+
+<p>
+  <a href="{% url 'create_post' %}">+ New Post</a>
+</p>
+
+{% if posts %}
   <ul>
     {% for post in posts %}
       <li>
         <strong>{{ post.title }}</strong>
-        ({{ post.visibility }}) by {{ post.author.username }}
-        <p>{{ post.plaintext }}</p>
-        {% if post.author_id == user.id %}
-          <a href="{% url 'post_edit' pk=post.id %}">Edit</a> |
-          <a href="{% url 'post_delete' pk=post.id %}">Delete</a>
+        <small>by {{ post.author.username }} • {{ post.created_at }}</small>
+        <div>{{ post.plaintext|default:"[Unable to decrypt]" }}</div>
+
+        {% if user.id == post.author_id %}
+          <div>
+            <a href="{% url 'edit_post' pk=post.id %}">Edit</a> |
+            <a href="{% url 'delete_post' pk=post.id %}">Delete</a>
+          </div>
         {% endif %}
       </li>
-    {% empty %}
-      <li>No posts yet.</li>
     {% endfor %}
   </ul>
+{% else %}
+  <p>No posts yet.</p>
+{% endif %}
 {% endblock %}

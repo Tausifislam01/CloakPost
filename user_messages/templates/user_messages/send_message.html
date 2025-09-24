@@ -1,10 +1,17 @@
 {% extends "base.html" %}
-{% block title %}Send Message{% endblock %}
+{% block title %}Send Message • CloakPost{% endblock %}
 {% block content %}
-  <h2>Send Message</h2>
-  <form method="post">
-    {% csrf_token %}
-    {{ form.as_p }}
-    <button type="submit">Send</button>
-  </form>
+<h2>Send Message</h2>
+<form method="post">
+  {% csrf_token %}
+  <div>
+    <label>Recipient</label>
+    {{ form.recipient }}
+  </div>
+  <div>
+    <label>Content</label>
+    {{ form.content }}
+  </div>
+  <button type="submit">Send</button>
+</form>
 {% endblock %}
