@@ -20,7 +20,9 @@ SECRET_KEY = os.getenv("SECRET_KEY", "dev-insecure-secret-key-change-me")
 DEBUG = os.getenv("DEBUG", "True").lower() in ("1", "true", "yes")
 
 # Comma-separated list, e.g. "localhost,127.0.0.1,yourdomain.onrender.com"
-ALLOWED_HOSTS = [h.strip() for h in os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if h.strip()]
+ALLOWED_HOSTS = [
+    h.strip() for h in os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if h.strip()
+]
 
 # When behind a proxy (Render), respect X-Forwarded-Proto so SECURE_SSL_REDIRECT works
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
@@ -40,13 +42,19 @@ INSTALLED_APPS = [
     # Realtime (WebSockets)
     "channels",
 
+    # Optional: enable CORS if frontend runs on another origin
+    "corsheaders",
+
     # Project apps
     "users.apps.UsersConfig",
     "posts.apps.PostsConfig",
     "user_messages.apps.UserMessagesConfig",
+    "api",
 ]
 
 MIDDLEWARE = [
+    # CORS must be before CommonMiddleware
+    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",  # serve static files in prod
 
@@ -79,18 +87,12 @@ TEMPLATES = [
 # ---------------------------------------------------------
 # ASGI / WSGI
 # ---------------------------------------------------------
-# Keep WSGI for management commands and any non-ASGI tasks.
 WSGI_APPLICATION = "CloakPost.wsgi.application"
-
-# Channels requires ASGI_APPLICATION; asgi.py uses ProtocolTypeRouter.
 ASGI_APPLICATION = "CloakPost.asgi.application"
 
 # ---------------------------------------------------------
 # Database
 # ---------------------------------------------------------
-# Two ways:
-# 1) DATABASE_URL: postgres://USER:PASS@HOST:PORT/DBNAME?sslmode=require
-# 2) Discrete POSTGRES_* vars (NAME/USER/PASSWORD/HOST/PORT)
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 
 if DATABASE_URL:
@@ -99,8 +101,8 @@ if DATABASE_URL:
         DATABASES = {
             "default": dj_database_url.config(
                 default=DATABASE_URL,
-                conn_max_age=600,   # persistent connections
-                ssl_require=True,   # enforce SSL on managed providers
+                conn_max_age=600,
+                ssl_require=True,
             )
         }
     except Exception:
@@ -128,7 +130,6 @@ else:
             }
         }
     else:
-        # Dev fallback: SQLite (OK for local only)
         DATABASES = {
             "default": {
                 "ENGINE": "django.db.backends.sqlite3",
@@ -160,13 +161,11 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
-# Optional 'static/' dir in repo for local dev
 STATICFILES_DIRS = []
 _static_dir = BASE_DIR / "static"
 if _static_dir.exists():
     STATICFILES_DIRS.append(_static_dir)
 
-# WhiteNoise staticfile backend
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 # ---------------------------------------------------------
@@ -194,35 +193,48 @@ except Exception:
     raise RuntimeError("AES_ENCRYPTION_KEY must be a valid base64-encoded 32-byte key")
 
 # ---------------------------------------------------------
-# CSRF / Security hardening (prod)
+# CSRF / CORS / Cookies / Security
 # ---------------------------------------------------------
-# Comma-separated list of origins, e.g. "https://your-domain.com,https://www.your-domain.com"
+# Frontend origins you trust (add prod domain later)
 CSRF_TRUSTED_ORIGINS = [
-    d.strip() for d in os.getenv("CSRF_TRUSTED_ORIGINS", "").split(",") if d.strip()
+    "http://localhost:5173",  # local Vite
+    *[
+        d.strip()
+        for d in os.getenv("CSRF_TRUSTED_ORIGINS", "").split(",")
+        if d.strip()
+    ],
 ]
 
-if not DEBUG:
-    SECURE_SSL_REDIRECT = True
-    SESSION_COOKIE_SECURE = True
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    *[
+        d.strip()
+        for d in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",")
+        if d.strip()
+    ],
+]
+
+# For cookie-based auth across origins
+CSRF_COOKIE_SAMESITE = "None"
+SESSION_COOKIE_SAMESITE = "None"
+CSRF_COOKIE_HTTPONLY = False  # allow JS to read CSRF cookie if needed
+SESSION_COOKIE_HTTPONLY = True
+
+if DEBUG:
+    CSRF_COOKIE_SECURE = False
+    SESSION_COOKIE_SECURE = False
+    SECURE_SSL_REDIRECT = False
+else:
     CSRF_COOKIE_SECURE = True
-    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SECURE = True
+    SECURE_SSL_REDIRECT = True
     SECURE_HSTS_SECONDS = int(os.getenv("SECURE_HSTS_SECONDS", "31536000"))
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
-else:
-    SECURE_SSL_REDIRECT = False
-    SESSION_COOKIE_SECURE = False
-    CSRF_COOKIE_SECURE = False
-    SESSION_COOKIE_HTTPONLY = True
-
-# Optional session-hardening knobs you can enable later:
-# SESSION_COOKIE_AGE = 60 * 60 * 2  # 2 hours
-# SESSION_EXPIRE_AT_BROWSER_CLOSE = True
 
 # ---------------------------------------------------------
 # Channels (Redis) — for realtime chat
 # ---------------------------------------------------------
-# Works locally with docker: `docker run -p 6379:6379 redis:alpine`
 REDIS_URL = os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0")
 
 CHANNEL_LAYERS = {

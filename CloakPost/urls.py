@@ -23,5 +23,6 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('users/', include('users.urls')),
     path('posts/', include('posts.urls')),
+    path("api/", include("api.urls")),
     path('messages/', include('user_messages.urls')),
 ]
