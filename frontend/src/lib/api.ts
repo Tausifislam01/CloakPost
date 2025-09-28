@@ -4,14 +4,13 @@ import { API_BASE } from "./env";
 /** Extra options we support on top of RequestInit */
 export type Options = RequestInit & { json?: any };
 
-/** Join API_BASE (which already includes /api) with a relative path */
+/** --- Small utilities --- */
 function joinUrl(path: string) {
   const base = API_BASE.endsWith("/") ? API_BASE.slice(0, -1) : API_BASE;
   const rel = path.startsWith("/") ? path : `/${path}`;
   return `${base}${rel}`;
 }
 
-/** Prepare init: JSON body + CSRF header for unsafe methods */
 async function prepare(path: string, opts: Options = {}) {
   const headers = new Headers(opts.headers);
 
@@ -40,7 +39,7 @@ async function prepare(path: string, opts: Options = {}) {
   return { url, init };
 }
 
-/** Primary low-level helper */
+/** --- Low-level helpers (return Response) --- */
 export async function apiFetch(path: string, opts: Options = {}) {
   const { url, init } = await prepare(path, opts);
   const res = await fetch(url, init);
@@ -50,8 +49,6 @@ export async function apiFetch(path: string, opts: Options = {}) {
   }
   return res;
 }
-
-/** Convenience low-level helpers */
 export async function get(path: string, opts: Options = {}) {
   return apiFetch(path, { ...opts, method: "GET" });
 }
@@ -68,59 +65,67 @@ export async function del(path: string, opts: Options = {}) {
   return apiFetch(path, { ...opts, method: "DELETE" });
 }
 
-/* =========================
-   High-level, app-specific API
-   Paths assume API_BASE ends with /api
-   ========================= */
+/** --- App-level types (adjust if you have stricter shapes) --- */
+export type Post = { id: number; content: string; author?: string; created_at?: string; [k: string]: any };
+export type Message = { id: number; from: string; to: string; content: string; created_at?: string; [k: string]: any };
 
+/** --- High-level helpers that RETURN PARSED JSON --- */
 /** Auth */
-async function login(username: string, password: string) {
-  return post("/users/login/", { username, password });
+async function login(username: string, password: string): Promise<any> {
+  const r = await post("/users/login/", { username, password });
+  // Backend may return user/session info; parse JSON for callers
+  return r.json().catch(() => ({}));
 }
-async function register(username: string, password: string, email: string) {
-  return post("/users/register/", { username, password, email });
+async function register(username: string, password: string, email?: string): Promise<any> {
+  const body = email ? { username, password, email } : { username, password };
+  const r = await post("/users/register/", body);
+  return r.json().catch(() => ({}));
 }
-async function logout() {
-  return post("/users/logout/", {});
+async function logout(): Promise<any> {
+  const r = await post("/users/logout/", {});
+  return r.json().catch(() => ({}));
 }
 
 /** Posts */
-async function listPosts() {
-  return get("/posts/");
+async function listPosts(): Promise<Post[]> {
+  const r = await get("/posts/");
+  return r.json();
 }
-async function createPost(content: string) {
-  // adjust body shape to your backend contract if different
-  return post("/posts/", { content });
+async function createPost(content: string): Promise<Post> {
+  const r = await post("/posts/", { content });
+  return r.json();
 }
 
 /** Users / Friends */
-async function searchUsers(q: string) {
+async function searchUsers(q: string): Promise<string[]> {
   const qs = new URLSearchParams({ q }).toString();
-  return get(`/users/search/?${qs}`);
+  const r = await get(`/users/search/?${qs}`);
+  return r.json();
 }
-async function sendFriendRequest(username: string) {
-  return post("/users/friends/requests/", { username });
+async function sendFriendRequest(username: string): Promise<any> {
+  const r = await post("/users/friends/requests/", { username });
+  return r.json().catch(() => ({}));
 }
-async function listFriendRequests() {
-  return get("/users/friends/requests/");
+async function listFriendRequests(): Promise<any[]> {
+  const r = await get("/users/friends/requests/");
+  return r.json();
 }
-async function acceptFriendRequest(requestId: number) {
-  return post(`/users/friends/requests/${requestId}/accept/`, {});
+async function acceptFriendRequest(requestId: number): Promise<any> {
+  const r = await post(`/users/friends/requests/${requestId}/accept/`, {});
+  return r.json().catch(() => ({}));
 }
 
 /** Messages */
-async function inbox() {
-  return get("/messages/");
+async function inbox(): Promise<Message[]> {
+  const r = await get("/messages/");
+  return r.json();
 }
-async function sendMessage(toUsername: string, content: string) {
-  return post("/messages/send/", { to: toUsername, content });
+async function sendMessage(toUsername: string, content: string): Promise<any> {
+  const r = await post("/messages/send/", { to: toUsername, content });
+  return r.json().catch(() => ({}));
 }
 
-/**
- * 🔙 Backwards-compatible facade:
- * Your code/tests import `{ api }` and expect both low-level
- * methods (get/post/...) and high-level methods (login, register, etc).
- */
+/** 🔙 Facade expected by your code/tests */
 export const api = {
   // low-level
   fetch: apiFetch,
@@ -129,7 +134,7 @@ export const api = {
   put,
   patch,
   delete: del,
-  // high-level
+  // high-level returning parsed JSON
   login,
   register,
   logout,
