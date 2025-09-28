@@ -1,5 +1,6 @@
 // frontend/src/lib/api.ts
 import { API_BASE } from "./env";
+import type { Post } from "../types"; // ✅ use your canonical Post (has ciphertext, etc.)
 
 /** Extra options we support on top of RequestInit */
 export type Options = RequestInit & { json?: any };
@@ -65,15 +66,21 @@ export async function del(path: string, opts: Options = {}) {
   return apiFetch(path, { ...opts, method: "DELETE" });
 }
 
-/** --- App-level types (adjust if you have stricter shapes) --- */
-export type Post = { id: number; content: string; author?: string; created_at?: string; [k: string]: any };
-export type Message = { id: number; from: string; to: string; content: string; created_at?: string; [k: string]: any };
+/** --- App-level types --- */
+export type { Post }; // re-export for convenience
+export type Message = {
+  id: number;
+  from: string;
+  to: string;
+  content: string;
+  created_at?: string;
+  [k: string]: any;
+};
 
 /** --- High-level helpers that RETURN PARSED JSON --- */
 /** Auth */
 async function login(username: string, password: string): Promise<any> {
   const r = await post("/users/login/", { username, password });
-  // Backend may return user/session info; parse JSON for callers
   return r.json().catch(() => ({}));
 }
 async function register(username: string, password: string, email?: string): Promise<any> {
@@ -89,11 +96,12 @@ async function logout(): Promise<any> {
 /** Posts */
 async function listPosts(): Promise<Post[]> {
   const r = await get("/posts/");
-  return r.json();
+  // Backend returns array of posts that match your Post type (with ciphertext, etc.)
+  return r.json() as Promise<Post[]>;
 }
 async function createPost(content: string): Promise<Post> {
   const r = await post("/posts/", { content });
-  return r.json();
+  return r.json() as Promise<Post>;
 }
 
 /** Users / Friends */
