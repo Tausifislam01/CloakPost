@@ -8,18 +8,17 @@
     />
     <title>CloakPost</title>
 
-    <!-- Optional icons/manifests -->
-    <link rel="icon" href="/favicon.ico" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <link rel="manifest" href="/site.webmanifest" />
-
-    <!-- IMPORTANT: runtime env FIRST -->
+    <!-- MUST run BEFORE the app bundle so window.__ENV is available -->
     <script src="/env.js"></script>
 
-    <!-- Your app entry (Vite) -->
+    <!-- App entry (Vite keeps this order in the build) -->
     <script type="module" src="/src/index.tsx"></script>
+
+    <!-- Optional -->
+    <link rel="icon" href="/favicon.ico" />
+    <link rel="manifest" href="/site.webmanifest" />
   </head>
-  <body>
+  <body class="bg-gray-50">
     <div id="root"></div>
   </body>
 </html>

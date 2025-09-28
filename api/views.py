@@ -10,9 +10,21 @@ from django.utils import timezone
 # Adjust these imports to match your project if names differ
 from posts.models import Post
 from users.models import FriendRequest
+from django.middleware.csrf import get_token 
 from user_messages.models import Message
 
 User = get_user_model()
+
+# api/views.py  (additions)
+ # <-- add this import
+
+def csrf(request):
+    """
+    Returns a CSRF token and sets the csrftoken cookie.
+    SPA should call /api/csrf/ once, then send X-CSRFToken on non-GET.
+    """
+    return JsonResponse({"csrfToken": get_token(request)})
+
 
 
 def json_ok(data: Any = None, status: int = 200) -> JsonResponse:

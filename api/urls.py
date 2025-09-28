@@ -1,7 +1,11 @@
+# api/urls.py
 from django.urls import path
 from . import views
 
 urlpatterns = [
+    # CSRF
+    path("csrf/", views.csrf, name="api_csrf"),
+
     # Auth
     path("users/login/", views.login_view, name="api_login"),
     path("users/register/", views.register_view, name="api_register"),
