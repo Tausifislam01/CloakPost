@@ -2,14 +2,23 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
     <title>CloakPost</title>
-    <script type="module" crossorigin src="/assets/index-BqwdY1Oe.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-BDgcNpmK.css">
+
+    <!-- MUST run BEFORE the app bundle so window.__ENV is available -->
+    <script src="/env.js"></script>
+
+    <!-- App entry (Vite keeps this order in the build) -->
+    <script type="module" src="/src/index.tsx"></script>
+
+    <!-- Optional -->
+    <link rel="icon" href="/favicon.ico" />
+    <link rel="manifest" href="/site.webmanifest" />
   </head>
   <body class="bg-gray-50">
     <div id="root"></div>
-    <!-- runtime env BEFORE app -->
-    <script src="/env.js"></script>
   </body>
 </html>
