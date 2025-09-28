@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build && node scripts/write-env.js",
+    "build": "tsc -b && vite build && node scripts/write-env.cjs",
     "preview": "vite preview",
     "test": "vitest run"
   },
