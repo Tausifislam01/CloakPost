@@ -203,6 +203,7 @@ CSRF_TRUSTED_ORIGINS = [
         for d in os.getenv("CSRF_TRUSTED_ORIGINS", "").split(",")
         if d.strip()
     ],
+    "https://cloakpost-zmd1.onrender.com",
 ]
 
 CORS_ALLOWED_ORIGINS = [
@@ -212,6 +213,7 @@ CORS_ALLOWED_ORIGINS = [
         for d in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",")
         if d.strip()
     ],
+    "https://cloakpost-zmd1.onrender.com",
 ]
 
 # For cookie-based auth across origins
