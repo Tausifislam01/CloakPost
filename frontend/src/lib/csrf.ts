@@ -1,11 +1,16 @@
-export function getCookie(name: string): string | null {
-  const value = `; ${document.cookie}`
-  const parts = value.split(`; ${name}=`)
-  if (parts.length === 2) return parts.pop()!.split(';').shift() || null
-  return null
-}
+// frontend/src/lib/csrf.ts
+import { apiFetch } from "./api";
 
-export function csrfHeader(): HeadersInit {
-  const token = getCookie('csrftoken')
-  return token ? { 'X-CSRFToken': token } : {}
+let CSRF_TOKEN: string | null = null;
+
+/**
+ * Fetch a CSRF token from /api/csrf/ and cache it in memory.
+ * No cookie-reading needed in the SPA.
+ */
+export async function ensureCsrfToken(): Promise<string> {
+  if (CSRF_TOKEN) return CSRF_TOKEN;
+  const res = await apiFetch("/csrf/", { method: "GET" });
+  const data = await res.json();
+  CSRF_TOKEN = data.csrfToken;
+  return CSRF_TOKEN!;
 }
