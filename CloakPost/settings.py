@@ -21,7 +21,7 @@ DEBUG = os.getenv("DEBUG", "True").lower() in ("1", "true", "yes")
 
 # Comma-separated list, e.g. "localhost,127.0.0.1,yourdomain.onrender.com"
 ALLOWED_HOSTS = [
-    h.strip() for h in os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if h.strip()
+    h.strip() for h in os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1,cloakpost-zmd1.onrender.com").split(",") if h.strip()
 ]
 
 # When behind a proxy (Render), respect X-Forwarded-Proto so SECURE_SSL_REDIRECT works
@@ -31,7 +31,7 @@ SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 # Applications
 # ---------------------------------------------------------
 INSTALLED_APPS = [
-    # Django
+    # Django core
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -42,7 +42,7 @@ INSTALLED_APPS = [
     # Realtime (WebSockets)
     "channels",
 
-    # Optional: enable CORS if frontend runs on another origin
+    # CORS for cross-origin frontend
     "corsheaders",
 
     # Project apps
@@ -53,7 +53,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
-    # CORS must be before CommonMiddleware
+    # CORS must be first (before CommonMiddleware)
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",  # serve static files in prod
@@ -195,31 +195,24 @@ except Exception:
 # ---------------------------------------------------------
 # CSRF / CORS / Cookies / Security
 # ---------------------------------------------------------
-# Frontend origins you trust (add prod domain later)
-CSRF_TRUSTED_ORIGINS = [
-    "http://localhost:5173",  # local Vite
-    *[
-        d.strip()
-        for d in os.getenv("CSRF_TRUSTED_ORIGINS", "").split(",")
-        if d.strip()
-    ],
-    "https://cloakpost-zmd1.onrender.com",
-]
-
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    *[
-        d.strip()
-        for d in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",")
-        if d.strip()
-    ],
-    "https://cloakpost-zmd1.onrender.com",
+    "http://localhost:5173",                # Local Vite
+    "https://cloakpost-zmd1.onrender.com",  # Render static site
+    *[d.strip() for d in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",") if d.strip()],
 ]
 
-# For cookie-based auth across origins
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:5173",
+    "https://cloakpost-zmd1.onrender.com",
+    *[d.strip() for d in os.getenv("CSRF_TRUSTED_ORIGINS", "").split(",") if d.strip()],
+]
+
+CORS_ALLOW_CREDENTIALS = True
+
+# Cookies (cross-site)
 CSRF_COOKIE_SAMESITE = "None"
 SESSION_COOKIE_SAMESITE = "None"
-CSRF_COOKIE_HTTPONLY = False  # allow JS to read CSRF cookie if needed
+CSRF_COOKIE_HTTPONLY = False
 SESSION_COOKIE_HTTPONLY = True
 
 if DEBUG:
