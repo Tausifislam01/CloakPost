@@ -1,5 +1,5 @@
 """
-Django settings for CloakPost project — realtime + Postgres/Render ready.
+Django settings for CloakPost project — Render (Django + Channels) ready.
 """
 
 from pathlib import Path
@@ -19,13 +19,19 @@ load_dotenv(BASE_DIR / ".env")
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-insecure-secret-key-change-me")
 DEBUG = os.getenv("DEBUG", "True").lower() in ("1", "true", "yes")
 
-# Comma-separated list, e.g. "localhost,127.0.0.1,yourdomain.onrender.com"
+# Only backend host here (no schemes). Frontend goes in CORS/CSRF below.
 ALLOWED_HOSTS = [
-    h.strip() for h in os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1,cloakpost-zmd1.onrender.com").split(",") if h.strip()
+    h.strip()
+    for h in os.getenv(
+        "ALLOWED_HOSTS",
+        "localhost,127.0.0.1,cloakpost.onrender.com"
+    ).split(",")
+    if h.strip()
 ]
 
-# When behind a proxy (Render), respect X-Forwarded-Proto so SECURE_SSL_REDIRECT works
+# Behind Render’s proxy: trust forwarded proto/host
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+USE_X_FORWARDED_HOST = True
 
 # ---------------------------------------------------------
 # Applications
@@ -42,7 +48,7 @@ INSTALLED_APPS = [
     # Realtime (WebSockets)
     "channels",
 
-    # CORS for cross-origin frontend
+    # CORS for cross-origin SPA
     "corsheaders",
 
     # Project apps
@@ -53,10 +59,12 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
-    # CORS must be first (before CommonMiddleware)
+    # CORS must be high (before Common & CSRF)
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
-    "whitenoise.middleware.WhiteNoiseMiddleware",  # serve static files in prod
+
+    # Static files in production
+    "whitenoise.middleware.WhiteNoiseMiddleware",
 
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -156,7 +164,7 @@ USE_I18N = True
 USE_TZ = True
 
 # ---------------------------------------------------------
-# Static files
+# Static files (WhiteNoise)
 # ---------------------------------------------------------
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
@@ -195,21 +203,41 @@ except Exception:
 # ---------------------------------------------------------
 # CSRF / CORS / Cookies / Security
 # ---------------------------------------------------------
+# Frontend SPA origin & local dev; allow extra via env if needed
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",                # Local Vite
-    "https://cloakpost-zmd1.onrender.com",  # Render static site
-    *[d.strip() for d in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",") if d.strip()],
+    "http://localhost:5173",
+    "https://cloakpost-zmd1.onrender.com",
+    *[
+        d.strip()
+        for d in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",")
+        if d.strip()
+    ],
 ]
 
+# CSRF needs full https:// URLs
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:5173",
     "https://cloakpost-zmd1.onrender.com",
-    *[d.strip() for d in os.getenv("CSRF_TRUSTED_ORIGINS", "").split(",") if d.strip()],
+    "https://cloakpost.onrender.com",
+    *[
+        d.strip()
+        for d in os.getenv("CSRF_TRUSTED_ORIGINS", "").split(",")
+        if d.strip()
+    ],
 ]
 
 CORS_ALLOW_CREDENTIALS = True
+# Make CORS preflights predictable
+CORS_ALLOW_HEADERS = [
+    "accept",
+    "accept-language",
+    "content-type",
+    "x-csrftoken",
+    "authorization",
+]
+CORS_ALLOW_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
 
-# Cookies (cross-site)
+# Cookies for cross-site requests (SPA on a different origin)
 CSRF_COOKIE_SAMESITE = "None"
 SESSION_COOKIE_SAMESITE = "None"
 CSRF_COOKIE_HTTPONLY = False
@@ -228,7 +256,7 @@ else:
     SECURE_HSTS_PRELOAD = True
 
 # ---------------------------------------------------------
-# Channels (Redis) — for realtime chat
+# Channels (Redis) — realtime chat
 # ---------------------------------------------------------
 REDIS_URL = os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0")
 
