@@ -6,9 +6,10 @@ services:
     buildCommand: |
       pip install -r requirements.txt
       python manage.py collectstatic --no-input
-    preDeployCommand: |
-      python manage.py migrate --no-input
-    startCommand: daphne -b 0.0.0.0 -p $PORT config.asgi:application
+    # Run migrations on each boot (idempotent) then start ASGI server
+    startCommand: |
+      python manage.py migrate --no-input && \
+      daphne -b 0.0.0.0 -p $PORT config.asgi:application
     envVars:
       - key: DJANGO_SETTINGS_MODULE
         value: config.settings
@@ -32,6 +33,7 @@ services:
 
   - type: keyvalue
     name: cloakpost-redis
+    # Required by schema; empty list = no external IPs (internal access still works)
     ipAllowList: []
 
 databases:
