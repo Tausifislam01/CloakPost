@@ -2,7 +2,6 @@ services:
   - type: web
     name: cloakpost-web
     runtime: python
-    plan: starter
     buildCommand: |
       pip install -r requirements.txt
       python manage.py collectstatic --no-input
@@ -29,12 +28,10 @@ services:
           name: cloakpost-redis
           type: keyvalue
           property: connectionString
-          
+
   - type: keyvalue
     name: cloakpost-redis
-    ipAllowList:
-      - sourceService:
-          name: cloakpost-web
+    ipAllowList: []
 
 databases:
   - name: cloakpost-db
