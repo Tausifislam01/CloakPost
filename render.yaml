@@ -1,0 +1,37 @@
+services:
+  - type: web
+    name: cloakpost-web
+    env: python
+    buildCommand: |
+      pip install -r requirements.txt
+      python manage.py collectstatic --no-input
+    startCommand: daphne -b 0.0.0.0 -p $PORT config.asgi:application
+    envVars:
+      - key: DJANGO_SETTINGS_MODULE
+        value: config.settings
+      - key: DEBUG
+        value: "False"
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: ALLOWED_HOSTS
+        value: "localhost,127.0.0.1"
+      - key: CSRF_TRUSTED_ORIGINS
+        value: "https://cloakpost-web.onrender.com"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: cloakpost-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: cloakpost-redis
+          type: redis
+          property: connectionString
+    postDeployCommand: |
+      python manage.py migrate --no-input
+
+databases:
+  - name: cloakpost-db
+
+services:
+  - type: redis
+    name: cloakpost-redis
