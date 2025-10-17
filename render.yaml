@@ -29,9 +29,8 @@ services:
     postDeployCommand: |
       python manage.py migrate --no-input
 
-databases:
-  - name: cloakpost-db
-
-services:
   - type: redis
     name: cloakpost-redis
+
+databases:
+  - name: cloakpost-db
