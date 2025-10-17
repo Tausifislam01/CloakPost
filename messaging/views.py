@@ -4,7 +4,7 @@ from django.db.models import Count, Prefetch
 from django.shortcuts import get_object_or_404, render
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
-from django.views.decorators.csrf import ensure_csrf_cookie  # <-- add
+from django.views.decorators.csrf import ensure_csrf_cookie
 
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -24,7 +24,7 @@ except Exception:
 
 # ---------------- UI PAGES ----------------
 
-@ensure_csrf_cookie                 # <-- ensures csrftoken cookie exists for JS fetch
+@ensure_csrf_cookie
 @login_required
 def threads_home(request):
     """
@@ -34,7 +34,7 @@ def threads_home(request):
     return render(request, "messaging/threads.html")
 
 
-@ensure_csrf_cookie                 # <-- ensures csrftoken cookie exists here too
+@ensure_csrf_cookie
 def thread_page(request, thread_id: int):
     """
     Single conversation page.
@@ -67,7 +67,8 @@ def list_threads(request):
         preview = None
         if last_message:
             try:
-                preview = last_message.get_plaintext_body()
+                # Correct helper name from model
+                preview = last_message.get_plain_body()
             except Exception:
                 preview = None
         data.append(
@@ -105,8 +106,8 @@ def create_thread(request):
             MessageThread.objects
             .filter(participants=me)
             .filter(participants__id=other_id)
-            .annotate(pcnt=Count("participants", distinct=True), 
-                     msg_count=Count("messages"))
+            .annotate(pcnt=Count("participants", distinct=True),
+                      msg_count=Count("messages"))
             .filter(pcnt=2)
             .filter(msg_count__gt=0)  # With messages
             .order_by("-id")
@@ -114,7 +115,7 @@ def create_thread(request):
         )
         if existing:
             return Response({"id": existing.id}, status=status.HTTP_200_OK)
-            
+
         # Then look for any thread, prioritize latest
         existing = (
             MessageThread.objects
@@ -127,13 +128,15 @@ def create_thread(request):
         )
         if existing:
             # Clean up any other empty threads with same participants
-            empty_dupes = (MessageThread.objects
+            empty_dupes = (
+                MessageThread.objects
                 .filter(participants=me)
                 .filter(participants__id=other_id)
                 .exclude(id=existing.id)
                 .annotate(pcnt=Count("participants", distinct=True),
-                         msg_count=Count("messages"))
-                .filter(pcnt=2, msg_count=0))
+                          msg_count=Count("messages"))
+                .filter(pcnt=2, msg_count=0)
+            )
             empty_dupes.delete()
             return Response({"id": existing.id}, status=status.HTTP_200_OK)
 
@@ -151,7 +154,7 @@ def dm_thread(request, user_id: int):
     """Get-or-create a 1:1 DM with user_id (upsert)."""
     import logging
     logger = logging.getLogger(__name__)
-    
+
     me = request.user
     other = get_object_or_404(User, id=user_id)
     logger.info(f"Looking for thread between {me.username} (id={me.id}) and {other.username} (id={other.id})")
@@ -159,17 +162,19 @@ def dm_thread(request, user_id: int):
     with transaction.atomic():
         thread, created = MessageThread.objects.get_thread_for_participants(me, other)
         logger.info(f"{'Created new' if created else 'Found existing'} thread {thread.id}")
-        
+
         if not created:
             # Clean up any duplicate threads that might exist
-            (MessageThread.objects
+            (
+                MessageThread.objects
                 .filter(participants=me.id)
                 .filter(participants=other.id)
                 .exclude(id=thread.id)
-                .delete())
-            
+                .delete()
+            )
+
         return Response(
-            {"id": thread.id}, 
+            {"id": thread.id},
             status=status.HTTP_201_CREATED if created else status.HTTP_200_OK
         )
 
@@ -189,27 +194,16 @@ def list_messages(request, thread_id: int):
     out = []
     for m in msgs[:200]:
         try:
-            body = m.get_plain_body()  # Use the correct method name
-            if not body:
-                # Log empty messages but don't skip them
-                print(f"Empty message body for message {m.id}")
-                
-            # Always include the message, even if body is empty
+            body = m.get_plain_body()  # correct model helper
             out.append({
                 "id": m.id,
                 "sender": m.sender.username,
-                "body": body or "",  # Ensure we send empty string instead of null
+                "body": body or "",
                 "created_at": m.created_at.isoformat(),
             })
-        except Exception as e:
-            import traceback
-            print(f"Error decrypting message {m.id}: {str(e)}")
-            print(traceback.format_exc())  # Get full stack trace
+        except Exception:
+            # Skip messages that fail to decrypt; keep rest of the thread
             continue
-    
-    if not out:
-        print(f"No messages found/decrypted for thread {thread_id}")
-        
     return Response(out)
 
 
@@ -224,8 +218,9 @@ def create_message(request, thread_id: int):
         return Response({"detail": "invalid body"}, status=status.HTTP_400_BAD_REQUEST)
 
     msg = Message.objects.create(thread=thread, sender=request.user)
-    msg.set_encrypted_body(body)
-    msg.save(update_fields=["ciphertext", "nonce", "aad", "created_at", "updated_at"])
+    # Use the model's high-level helper; field is enc_body under the hood
+    msg.set_plain_body(body)
+    msg.save(update_fields=["enc_body", "created_at", "updated_at"])
 
     return Response(
         {"id": msg.id, "sender": request.user.username, "body": body, "created_at": msg.created_at.isoformat()},
