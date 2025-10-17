@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Login · Cloakpost{% endblock %}
+{% block content %}
+<div class="max-w-md mx-auto">
+  <div class="card bg-base-100 shadow">
+    <div class="card-body">
+      <h2 class="card-title">Login</h2>
+
+      <form method="post" action="{% url 'users-login' %}" class="space-y-3">
+        {% csrf_token %}
+
+        <div class="form-control">
+          <label class="label"><span class="label-text">Username</span></label>
+          <input name="username" class="input input-bordered" required />
+        </div>
+
+        <div class="form-control">
+          <label class="label"><span class="label-text">Password</span></label>
+          <input name="password" type="password" class="input input-bordered" required />
+        </div>
+
+        <div class="card-actions justify-end">
+          <button class="btn btn-primary">Login</button>
+        </div>
+      </form>
+
+      <p class="mt-2 text-sm">
+        New here? <a href="{% url 'users-register' %}" class="link">Create an account</a>
+      </p>
+    </div>
+  </div>
+</div>
+{% endblock %}

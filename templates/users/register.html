@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Register · Cloakpost{% endblock %}
+{% block content %}
+<div class="max-w-md mx-auto">
+  <div class="card bg-base-100 shadow">
+    <div class="card-body">
+      <h2 class="card-title">Create account</h2>
+      <form method="post" action="{% url 'users-register' %}" class="space-y-3">
+        {% csrf_token %}
+        {% if form %}
+          {{ form.non_field_errors }}
+          {% for field in form %}
+            <div class="form-control">
+              <label class="label"><span class="label-text">{{ field.label }}</span></label>
+              {{ field }}
+              {% if field.errors %}<p class="text-error text-sm">{{ field.errors }}</p>{% endif %}
+            </div>
+          {% endfor %}
+        {% else %}
+          <div class="form-control">
+            <label class="label"><span class="label-text">Username</span></label>
+            <input name="username" class="input input-bordered" required />
+          </div>
+          <div class="form-control">
+            <label class="label"><span class="label-text">Email (optional)</span></label>
+            <input name="email" type="email" class="input input-bordered" />
+          </div>
+          <div class="form-control">
+            <label class="label"><span class="label-text">Password</span></label>
+            <input name="password1" type="password" class="input input-bordered" required />
+          </div>
+          <div class="form-control">
+            <label class="label"><span class="label-text">Confirm Password</span></label>
+            <input name="password2" type="password" class="input input-bordered" required />
+          </div>
+        {% endif %}
+        <div class="card-actions justify-end">
+          <button class="btn btn-primary">Register</button>
+        </div>
+      </form>
+      <p class="mt-2 text-sm">
+        Already have an account? <a href="{% url 'users-login' %}" class="link">Login</a>
+      </p>
+    </div>
+  </div>
+</div>
+{% endblock %}

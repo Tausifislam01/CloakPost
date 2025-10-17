@@ -1,0 +1,227 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>{% block title %}Cloakpost{% endblock %}</title>
+
+  <!-- Tailwind CDN (dev) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = { theme: { extend: {} } }
+  </script>
+  <!-- DaisyUI (CDN) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@4.12.10/dist/full.min.css">
+  <!-- Optional: your overrides -->
+  <link rel="stylesheet" href="{% static 'css/app.css' %}">
+  {% block head %}{% endblock %}
+</head>
+<body class="min-h-screen bg-base-200">
+  <!-- Navbar -->
+  <div class="navbar bg-base-100 shadow">
+    <div class="flex-1">
+      <a href="{% url 'home' %}" class="btn btn-ghost text-xl">Cloakpost</a>
+    </div>
+    <div class="flex-none gap-2">
+      {% if user.is_authenticated %}
+        <!-- Use helper so we refresh requests before opening -->
+        <button class="btn btn-ghost" onclick="openFriendFinder()">Find friends</button>
+        <a href="{% url 'msg-ui-threads' %}" class="btn btn-ghost">Messages</a>
+        <a href="{% url 'profile' %}" class="btn btn-ghost">Profile</a>
+        <form method="post" action="{% url 'users-logout' %}">
+          {% csrf_token %}
+          <button class="btn btn-error btn-sm">Logout</button>
+        </form>
+      {% else %}
+        <a href="{% url 'users-login' %}" class="btn btn-ghost">Login</a>
+        <a href="{% url 'users-register' %}" class="btn btn-primary">Register</a>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Flash messages -->
+  <div class="container mx-auto p-4">
+    {% if messages %}
+      <div class="space-y-2">
+        {% for m in messages %}
+          <div class="alert {{ m.tags|default:'info' }}">
+            <span>{{ m }}</span>
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </div>
+
+  <!-- Main content -->
+  <main class="container mx-auto p-4">
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- Friend Finder Modal -->
+  <dialog id="friendFinder" class="modal">
+    <div class="modal-box">
+      <h3 class="font-bold text-lg">Find friends</h3>
+      {% if user.is_authenticated %}
+        <div class="mt-3 flex gap-2">
+          <input id="ff-input" type="text" placeholder="Search username…" class="input input-bordered w-full" />
+          <button id="ff-search" class="btn btn-primary">Search</button>
+        </div>
+        <div id="ff-results" class="mt-4 space-y-2"></div>
+        <div class="mt-6">
+          <h4 class="font-semibold mb-2">Requests</h4>
+          <div id="ff-requests" class="space-y-2 text-sm opacity-80">Loading…</div>
+        </div>
+      {% else %}
+        <p class="mt-3">Please log in to search for friends.</p>
+      {% endif %}
+      <div class="modal-action">
+        <form method="dialog">
+          <button class="btn">Close</button>
+        </form>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Global helpers + Friend Finder JS (must come BEFORE page scripts) -->
+  <script>
+    // --- CSRF helper ---
+    function getCookie(name) {
+      const value = `; ${document.cookie}`;
+      const parts = value.split(`; ${name}=`);
+      if (parts.length === 2) return decodeURIComponent(parts.pop().split(';').shift());
+    }
+    const csrftoken = getCookie('csrftoken');
+
+    // --- fetch helper used by all pages ---
+    function api(url, opts = {}) {
+      const o = Object.assign({ headers: {} }, opts);
+      o.headers['X-Requested-With'] = 'XMLHttpRequest';
+      if ((o.method || 'GET').toUpperCase() !== 'GET') {
+        o.headers['X-CSRFToken'] = csrftoken;
+      }
+      return fetch(url, o).then(r => {
+        if (r.headers.get('content-type')?.includes('application/json')) return r.json();
+        return r.text().then(t => ({ ok: r.ok, text: t }));
+      });
+    }
+
+    // --- Friend Finder logic ---
+    const ffInput = document.getElementById('ff-input');
+    const ffSearchBtn = document.getElementById('ff-search');
+    const ffResults = document.getElementById('ff-results');
+    const ffRequests = document.getElementById('ff-requests');
+
+    async function refreshRequests() {
+      if (!ffRequests) return;
+      try {
+        const data = await api("{% url 'users-friend-requests' %}");
+        const inc = data.incoming || [];
+        const out = data.outgoing || [];
+        ffRequests.innerHTML = `
+          <div><span class="font-semibold">Incoming:</span> ${
+            inc.length ? '' : '<span class="opacity-70">None</span>'
+          }</div>
+          <div class="mt-2 space-y-1">
+            ${inc.map(x => `
+              <div class="flex items-center justify-between">
+                <span>@${x.from_user__username}</span>
+                <div class="flex gap-2">
+                  <button class="btn btn-xs btn-primary" data-accept="${x.id}">Accept</button>
+                  <button class="btn btn-xs btn-ghost" data-decline="${x.id}">Decline</button>
+                </div>
+              </div>`).join('')}
+          </div>
+          <div class="mt-4"><span class="font-semibold">Outgoing:</span> ${
+            out.length ? '' : '<span class="opacity-70">None</span>'
+          }</div>
+          <div class="mt-2 space-y-1">
+            ${out.map(x => `
+              <div class="flex items-center justify-between">
+                <span>@${x.to_user__username}</span>
+                <button class="btn btn-xs btn-ghost" data-cancel="${x.id}">Cancel</button>
+              </div>`).join('')}
+          </div>
+        `;
+
+        ffRequests.querySelectorAll('[data-accept]').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            await api(`/users/friend-requests/${btn.dataset.accept}/accept/`, { method: 'POST' });
+            await refreshRequests();
+          });
+        });
+        ffRequests.querySelectorAll('[data-decline]').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            await api(`/users/friend-requests/${btn.dataset.decline}/decline/`, { method: 'POST' });
+            await refreshRequests();
+          });
+        });
+        ffRequests.querySelectorAll('[data-cancel]').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            await api(`/users/friend-requests/${btn.dataset.cancel}/cancel/`, { method: 'POST' });
+            await refreshRequests();
+          });
+        });
+      } catch (e) {
+        ffRequests.textContent = 'Failed to load requests.';
+        console.error(e);
+      }
+    }
+
+    async function doSearch() {
+      if (!ffResults) return;
+      ffResults.innerHTML = '<div class="opacity-70">Searching…</div>';
+      try {
+        const q = encodeURIComponent((ffInput?.value || '').trim());
+        const data = await api(`/users/search/?q=${q}`);
+        const results = data.results || [];
+        if (!results.length) {
+          ffResults.innerHTML = '<div class="opacity-70">No users found.</div>';
+          return;
+        }
+        ffResults.innerHTML = results.map(u => `
+          <div class="flex items-center justify-between bg-base-200 p-2 rounded">
+            <div class="font-medium">@${u.username}</div>
+            <button class="btn btn-sm" data-send="${u.id}">Add friend</button>
+          </div>
+        `).join('');
+
+        ffResults.querySelectorAll('[data-send]').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const r = await api(`/users/friend-requests/send/${btn.dataset.send}/`, { method: 'POST' });
+            if (r?.ok) {
+              btn.textContent = 'Requested';
+              btn.disabled = true;
+            }
+            await refreshRequests();
+          });
+        });
+      } catch (e) {
+        ffResults.innerHTML = '<div class="text-error">Failed to search.</div>';
+        console.error(e);
+      }
+    }
+
+    if (ffSearchBtn) {
+      ffSearchBtn.addEventListener('click', doSearch);
+    }
+
+    // Helper to open modal AND refresh (fixes the "not showing" issue)
+    function openFriendFinder() {
+      refreshRequests();
+      friendFinder.showModal();
+    }
+
+    // Clean up results on close
+    if (window.friendFinder) {
+      window.friendFinder.addEventListener('close', () => {
+        if (ffResults) ffResults.innerHTML = '';
+      });
+      // (removed a non-standard 'show' listener)
+    }
+  </script>
+
+  <!-- Page-specific scripts come AFTER helpers so `api()` exists -->
+  {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block title %}Profile · Cloakpost{% endblock %}
+
+{% block content %}
+<div class="mx-auto max-w-5xl space-y-6">
+
+  <!-- Header / Identity -->
+  <div class="card bg-base-100 shadow">
+    <div class="card-body md:flex md:items-center md:justify-between">
+      <div class="flex items-center gap-4">
+        <!-- Simple avatar using first letter of username -->
+        <div class="avatar placeholder">
+          <div class="bg-primary text-primary-content rounded-full w-16">
+            <span class="text-xl">
+              {{ request.user.username|slice:":1"|upper }}
+            </span>
+          </div>
+        </div>
+        <div>
+          <h1 class="text-2xl font-semibold leading-tight">{{ request.user.username }}</h1>
+          <div class="mt-1 flex flex-wrap items-center gap-2 text-sm">
+            <span class="badge badge-outline">Member</span>
+            {% if request.user.is_staff %}<span class="badge badge-secondary">Staff</span>{% endif %}
+            {% if request.user.is_superuser %}<span class="badge badge-accent">Admin</span>{% endif %}
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-4 md:mt-0 flex items-center gap-2">
+        <button id="copy-username" class="btn btn-sm">
+          Copy username
+        </button>
+        <a href="{% url 'home' %}" class="btn btn-sm btn-ghost">Home</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Quick Stats -->
+  <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+    <div class="stat bg-base-100 shadow rounded-box">
+      <div class="stat-title">Joined</div>
+      <div class="stat-value text-lg">{{ request.user.date_joined|date:"M d, Y" }}</div>
+      <div class="stat-desc">at {{ request.user.date_joined|date:"H:i" }}</div>
+    </div>
+    <div class="stat bg-base-100 shadow rounded-box">
+      <div class="stat-title">Last login</div>
+      <div class="stat-value text-lg">
+        {% if request.user.last_login %}
+          {{ request.user.last_login|date:"M d, Y" }}
+        {% else %}
+          —
+        {% endif %}
+      </div>
+      <div class="stat-desc">
+        {% if request.user.last_login %}
+          at {{ request.user.last_login|date:"H:i" }}
+        {% else %}
+          No login history
+        {% endif %}
+      </div>
+    </div>
+    <div class="stat bg-base-100 shadow rounded-box">
+      <div class="stat-title">Account</div>
+      <div class="stat-value text-lg">Active</div>
+      <div class="stat-desc">Secure by design</div>
+    </div>
+  </div>
+
+  <!-- Account Details + Shortcuts -->
+  <div class="grid grid-cols-1 gap-6 md:grid-cols-3">
+    <!-- Account details -->
+    <div class="md:col-span-2">
+      <div class="card bg-base-100 shadow">
+        <div class="card-body">
+          <h2 class="card-title">Account details</h2>
+          <div class="divider my-2"></div>
+          <dl class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <dt class="text-sm opacity-70">Username</dt>
+              <dd class="font-medium break-all">{{ request.user.username }}</dd>
+            </div>
+            <div>
+              <dt class="text-sm opacity-70">Email</dt>
+              <dd class="font-medium break-all">
+                {% if request.user.email %}{{ request.user.email }}{% else %}<span class="opacity-60">Not set</span>{% endif %}
+              </dd>
+            </div>
+            <div>
+              <dt class="text-sm opacity-70">User ID</dt>
+              <dd class="font-medium">{{ request.user.id }}</dd>
+            </div>
+            <div>
+              <dt class="text-sm opacity-70">Groups</dt>
+              <dd class="font-medium">
+                {% with groups=request.user.groups.all %}
+                  {% if groups %}
+                    {% for g in groups %}<span class="badge mr-1">{{ g.name }}</span>{% endfor %}
+                  {% else %}
+                    <span class="opacity-60">None</span>
+                  {% endif %}
+                {% endwith %}
+              </dd>
+            </div>
+          </dl>
+        </div>
+      </div>
+    </div>
+
+    <!-- Shortcuts -->
+    <div class="space-y-4">
+      <div class="card bg-base-100 shadow">
+        <div class="card-body">
+          <h3 class="card-title text-base">Shortcuts</h3>
+          <div class="mt-2 grid gap-2">
+            <a class="btn btn-sm btn-primary" href="{% url 'home' %}">Go to Home</a>
+            <!-- When posts & threads pages are ready, update/enable these: -->
+            <a class="btn btn-sm btn-ghost" href="#">My Posts (soon)</a>
+            <a class="btn btn-sm btn-ghost" href="#">Messages (soon)</a>
+          </div>
+        </div>
+      </div>
+      <div class="card bg-base-100 shadow">
+        <div class="card-body">
+          <h3 class="card-title text-base">Security tips</h3>
+          <ul class="list-disc ml-5 space-y-1 text-sm">
+            <li>Keep your browser and OS up to date.</li>
+            <li>Use a strong unique password.</li>
+            <li>Never share secrets in screenshots.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Copy username button
+  const btn = document.getElementById('copy-username');
+  if (btn) {
+    btn.addEventListener('click', async () => {
+      try {
+        const text = "{{ request.user.username|escapejs }}";
+        await navigator.clipboard.writeText(text);
+        btn.classList.add('btn-success');
+        btn.textContent = 'Copied!';
+        setTimeout(() => {
+          btn.classList.remove('btn-success');
+          btn.textContent = 'Copy username';
+        }, 1200);
+      } catch (e) { console.error(e); }
+    });
+  }
+</script>
+{% endblock %}

@@ -1,0 +1,211 @@
+{# templates/posts/feed.html #}
+
+{# Safely expose the current user's id (0 if anonymous) for JS #}
+{{ request.user.id|default_if_none:0|json_script:"me-id" }}
+
+<div class="max-w-3xl mx-auto space-y-6">
+
+  {# Composer #}
+  {% if user.is_authenticated %}
+  <div class="card bg-base-100 shadow">
+    <div class="card-body">
+      <h2 class="card-title">Create a post</h2>
+      <form id="post-form" class="space-y-3">
+        {% csrf_token %}
+        <textarea name="body" id="post-body" class="textarea textarea-bordered w-full" rows="3"
+                  placeholder="What's on your mind?" required></textarea>
+
+        <div class="flex items-center gap-3">
+          <select name="visibility" id="post-visibility" class="select select-bordered">
+            <option value="PUBLIC">Public</option>
+            <option value="FRIENDS">Friends only</option>
+            <option value="ONLY_ME">Only me</option>
+          </select>
+          <button class="btn btn-primary">Post</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  {% else %}
+  <div class="alert">
+    <span><a class="link" href="{% url 'users-login' %}">Login</a> to create posts.</span>
+  </div>
+  {% endif %}
+
+  {# Feed list #}
+  <div id="feed" class="space-y-3">
+    <div class="opacity-70">Loading posts…</div>
+  </div>
+
+  {# Pagination controls #}
+  <div id="pager" class="flex items-center justify-between max-w-3xl mx-auto mt-2">
+    <button id="prev-page" class="btn btn-sm" disabled>Prev</button>
+    <div id="page-indicator" class="text-sm opacity-70">Page 1</div>
+    <button id="next-page" class="btn btn-sm" disabled>Next</button>
+  </div>
+</div>
+
+<script>
+  // Read current user id safely from the embedded JSON (0 if anonymous)
+  const meIdRaw = JSON.parse(document.getElementById('me-id').textContent);
+  const meId = meIdRaw === 0 ? null : meIdRaw;
+
+  // Helper: encode HTML
+  function esc(s){return s.replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))}
+
+  let currentPage = 1;
+  const pageSize = 10;
+
+  async function loadFeed(page=1) {
+    try {
+      const url = new URL("{% url 'posts-list' %}", window.location.origin);
+      url.searchParams.set('page', page);
+      url.searchParams.set('page_size', pageSize);
+      const res = await fetch(url, {headers:{'X-Requested-With':'XMLHttpRequest'}});
+      const data = await res.json();
+      const posts = data.posts || [];
+      const feed = document.getElementById('feed');
+
+      if (!posts.length) {
+        feed.innerHTML = '<div class="opacity-70">No posts yet.</div>';
+      } else {
+        feed.innerHTML = posts.map(p => `
+          <div class="card bg-base-100 shadow" data-id="${p.id}">
+            <div class="card-body">
+              <div class="flex items-center justify-between">
+                <div>
+                  <div class="font-semibold">@${esc(p.author)}</div>
+                  <div class="text-xs opacity-70">${new Date(p.created_at).toLocaleString()}</div>
+                </div>
+                <div class="badge">${esc(p.visibility.replace('_',' '))}</div>
+              </div>
+              <p class="mt-2 whitespace-pre-wrap">${esc(p.body)}</p>
+
+              ${
+                meId && p.author_id === meId ? `
+                <div class="mt-3 flex gap-2">
+                  <button class="btn btn-xs" data-edit="${p.id}">Edit</button>
+                  <button class="btn btn-xs btn-error" data-del="${p.id}">Delete</button>
+                </div>
+                ` : ''
+              }
+            </div>
+          </div>
+        `).join('');
+      }
+
+      // Pager
+      currentPage = data.page || page;
+      document.getElementById('page-indicator').textContent = `Page ${currentPage}`;
+      document.getElementById('prev-page').disabled = !data.has_prev;
+      document.getElementById('next-page').disabled = !data.has_next;
+
+      // bind edit/delete
+      document.querySelectorAll('[data-del]').forEach(btn=>{
+        btn.addEventListener('click', async ()=>{
+          const id = btn.dataset.del;
+          if (!confirm('Delete this post?')) return;
+          const res = await fetch(`/posts/${id}/delete/`, {
+            method:'POST',
+            headers: {'X-CSRFToken': getCookie('csrftoken'), 'X-Requested-With':'XMLHttpRequest'}
+          });
+          if (res.ok) loadFeed(currentPage);
+          else alert('Failed to delete');
+        });
+      });
+
+      document.querySelectorAll('[data-edit]').forEach(btn=>{
+        btn.addEventListener('click', ()=> openEditModal(btn.dataset.edit));
+      });
+
+    } catch(e) {
+      console.error(e);
+      document.getElementById('feed').innerHTML = '<div class="text-error">Failed to load posts.</div>';
+    }
+  }
+
+  // Composer
+  const form = document.getElementById('post-form');
+  if (form) {
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const body = document.getElementById('post-body').value.trim();
+      const visibility = document.getElementById('post-visibility').value;
+      if (!body) return;
+      const res = await fetch("{% url 'posts-create' %}", {
+        method: 'POST',
+        headers: {'X-CSRFToken': getCookie('csrftoken'), 'X-Requested-With':'XMLHttpRequest'},
+        body: new URLSearchParams({body, visibility})
+      });
+      if (res.ok) {
+        document.getElementById('post-body').value = '';
+        document.getElementById('post-visibility').value = 'PUBLIC';
+        loadFeed(1);
+      } else {
+        alert('Failed to create post');
+      }
+    });
+  }
+
+  // Pagination buttons
+  document.getElementById('prev-page').addEventListener('click', ()=> loadFeed(currentPage - 1));
+  document.getElementById('next-page').addEventListener('click', ()=> loadFeed(currentPage + 1));
+</script>
+
+<dialog id="editDialog" class="modal">
+  <div class="modal-box">
+    <h3 class="font-bold text-lg">Edit post</h3>
+    <form id="edit-form" class="space-y-3">
+      {% csrf_token %}
+      <textarea id="edit-body" class="textarea textarea-bordered w-full" rows="4" required></textarea>
+      <select id="edit-visibility" class="select select-bordered">
+        <option value="PUBLIC">Public</option>
+        <option value="FRIENDS">Friends only</option>
+        <option value="ONLY_ME">Only me</option>
+      </select>
+      <input type="hidden" id="edit-id" />
+      <div class="modal-action">
+        <button id="edit-save" class="btn btn-primary">Save</button>
+        <button type="button" class="btn" onclick="document.getElementById('editDialog').close()">Cancel</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+
+<script>
+  // Explicit reference to the dialog element
+  const editDialog = document.getElementById('editDialog');
+
+  function openEditModal(id){
+    const card = document.querySelector(`.card[data-id="${id}"]`);
+    if(!card || !editDialog) return;
+    const text = card.querySelector('p')?.textContent || '';
+    const vis = (card.querySelector('.badge')?.textContent || 'Public').toUpperCase().replace(' ','_');
+    document.getElementById('edit-id').value = id;
+    document.getElementById('edit-body').value = text;
+    document.getElementById('edit-visibility').value = vis;
+    editDialog.showModal();
+  }
+
+  document.getElementById('edit-save').addEventListener('click', async (e)=>{
+    e.preventDefault();
+    const id = document.getElementById('edit-id').value;
+    const body = document.getElementById('edit-body').value.trim();
+    const visibility = document.getElementById('edit-visibility').value;
+    if(!id || !body) return;
+    const res = await fetch(`/posts/${id}/edit/`, {
+      method:'POST',
+      headers:{'X-CSRFToken': getCookie('csrftoken'), 'X-Requested-With':'XMLHttpRequest'},
+      body: new URLSearchParams({body, visibility})
+    });
+    if(res.ok){
+      editDialog.close();
+      loadFeed(currentPage);
+    } else {
+      alert('Failed to save');
+    }
+  });
+
+  // Initial load
+  loadFeed(1);
+</script>

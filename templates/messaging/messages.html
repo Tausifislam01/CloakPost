@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="max-w-3xl mx-auto px-4 py-6">
+  <div class="flex items-center justify-between mb-4">
+    <h1 class="text-xl font-semibold">Messages</h1>
+    <button id="newMsgBtn" class="px-3 py-2 rounded bg-black text-white">New message</button>
+  </div>
+
+  <div id="threads" class="divide-y border rounded bg-white">
+    <div class="p-3 text-gray-500" id="threadsEmpty">Loading…</div>
+  </div>
+</div>
+
+<!-- New Message Modal -->
+<div id="newMsgModal" class="fixed inset-0 hidden items-center justify-center bg-black/40">
+  <div class="bg-white rounded-lg shadow-xl w-full max-w-md">
+    <div class="p-4 border-b flex items-center justify-between">
+      <h2 class="font-semibold">Start a new chat</h2>
+      <button id="closeModal" class="text-gray-500 hover:text-black">&times;</button>
+    </div>
+    <div class="p-3">
+      <input id="friendFilter" class="w-full border rounded px-3 py-2 mb-2" placeholder="Search friends…" />
+      <div id="friendsList" class="max-h-72 overflow-y-auto divide-y">
+        <div class="p-3 text-gray-500">Loading…</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const threadsEl = document.getElementById("threads");
+  const threadsEmptyEl = document.getElementById("threadsEmpty");
+
+  function rowThread(t) {
+    const a = document.createElement("a");
+    a.href = `/msg/ui/thread/${t.id}/`;
+    a.className = "flex items-center justify-between p-3 hover:bg-gray-50";
+    const names = (t.participants || []).join(", ");
+    const preview = (t.last_message || "");
+    a.innerHTML = `
+      <div>
+        <div class="font-medium">${names || "Conversation"}</div>
+        <div class="text-sm text-gray-500 truncate">${preview || "No messages yet"}</div>
+      </div>
+      <div class="text-sm text-gray-400">&#x279C;</div>
+    `;
+    return a;
+  }
+
+  function loadThreads() {
+    fetch("/msg/threads/", { headers: { "X-Requested-With": "fetch" } })
+      .then(r => r.json())
+      .then(list => {
+        threadsEl.innerHTML = "";
+        if (!list.length) {
+          const d = document.createElement("div");
+          d.className = "p-3 text-gray-500";
+          d.textContent = "No conversations yet.";
+          threadsEl.appendChild(d);
+          return;
+        }
+        list.forEach(t => threadsEl.appendChild(rowThread(t)));
+      })
+      .catch(err => {
+        threadsEl.innerHTML = "";
+        const d = document.createElement("div");
+        d.className = "p-3 text-red-600";
+        d.textContent = "Failed to load conversations.";
+        threadsEl.appendChild(d);
+        console.error(err);
+      });
+  }
+  loadThreads();
+
+  // ---------- New message modal ----------
+  const modal = document.getElementById("newMsgModal");
+  const openBtn = document.getElementById("newMsgBtn");
+  const closeBtn = document.getElementById("closeModal");
+  const friendsList = document.getElementById("friendsList");
+  const friendFilter = document.getElementById("friendFilter");
+
+  function openModal() {
+    modal.classList.remove("hidden");
+    modal.classList.add("flex");
+    fetchFriends();
+  }
+  function closeModal() {
+    modal.classList.add("hidden");
+    modal.classList.remove("flex");
+    friendsList.innerHTML = `<div class="p-3 text-gray-500">Loading…</div>`;
+    friendFilter.value = "";
+  }
+  openBtn.addEventListener("click", openModal);
+  closeBtn.addEventListener("click", closeModal);
+  modal.addEventListener("click", (e) => { if (e.target === modal) closeModal(); });
+
+  let friendsCache = [];
+  function rowFriend(u) {
+    const r = document.createElement("button");
+    r.className = "w-full text-left p-3 hover:bg-gray-50";
+    r.textContent = u.username;
+    r.addEventListener("click", () => {
+      fetch(`/msg/dm/${u.id}/`, {
+        method: "POST",
+        headers: {
+          "X-Requested-With": "fetch",
+          "Content-Type": "application/json",
+          "X-CSRFToken": (window.getCSRFToken ? getCSRFToken() : ""),
+        },
+        body: "{}",
+      })
+      .then(r => r.json())
+      .then(({ id }) => {
+        window.location.href = `/msg/ui/thread/${id}/`;
+      })
+      .catch(console.error);
+    });
+    return r;
+  }
+
+  function renderFriends(list) {
+    friendsList.innerHTML = "";
+    if (!list.length) {
+      friendsList.innerHTML = `<div class="p-3 text-gray-500">No friends found.</div>`;
+      return;
+    }
+    list.forEach(u => friendsList.appendChild(rowFriend(u)));
+  }
+
+  function fetchFriends() {
+    fetch("/msg/friends/", { headers: { "X-Requested-With": "fetch" } })
+      .then(r => r.json())
+      .then(list => {
+        friendsCache = list;
+        renderFriends(list);
+      })
+      .catch(err => {
+        friendsList.innerHTML = `<div class="p-3 text-red-600">Failed to load friends.</div>`;
+        console.error(err);
+      });
+  }
+
+  friendFilter.addEventListener("input", () => {
+    const q = friendFilter.value.toLowerCase();
+    const filtered = friendsCache.filter(u => (u.username || "").toLowerCase().includes(q));
+    renderFriends(filtered);
+  });
+</script>
+{% endblock %}

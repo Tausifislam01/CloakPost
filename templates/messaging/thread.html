@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="max-w-3xl mx-auto px-4 py-6">
+  <h1 class="text-xl font-semibold mb-4">Thread</h1>
+
+  <div id="messages" class="space-y-2 border rounded p-3 h-[60vh] overflow-y-auto bg-white"></div>
+
+  <form id="sendForm" class="mt-4 flex gap-2">
+    <input id="messageInput" class="flex-1 border rounded px-3 py-2" placeholder="Write a message…" />
+    <button class="px-4 py-2 rounded bg-black text-white">Send</button>
+  </form>
+</div>
+
+<script>
+  const threadId = {{ thread_id }};
+  const messagesEl = document.getElementById("messages");
+  const formEl = document.getElementById("sendForm");
+  const inputEl = document.getElementById("messageInput");
+
+  function appendMessage(m) {
+    const wrap = document.createElement("div");
+    wrap.className = `flex ${m.sender === '{{ request.user.username }}' ? 'justify-end' : ''}`;
+    const bubble = document.createElement("div");
+    bubble.className = `max-w-[80%] rounded-lg px-3 py-2 ${
+      m.sender === '{{ request.user.username }}' ? 'bg-blue-500 text-white' : 'bg-gray-100'
+    } whitespace-pre-wrap`;
+    
+    const header = document.createElement("div");
+    header.className = "text-xs opacity-70 mb-1";
+    header.textContent = m.sender;
+    bubble.appendChild(header);
+    
+    const text = document.createElement("div");
+    text.textContent = m.body || "(empty message)";  // Show indicator for empty messages
+    bubble.appendChild(text);
+    
+    wrap.appendChild(bubble);
+    messagesEl.appendChild(wrap);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  // Initial load
+  fetch(`/msg/threads/${threadId}/messages/`, {
+    headers: { "X-Requested-With": "fetch" }
+  })
+    .then(r => r.json())
+    .then(list => {
+      messagesEl.innerHTML = "";
+      list.forEach(appendMessage);
+    })
+    .catch(console.error);
+
+  // WebSocket connect
+  const wsScheme = window.location.protocol === "https:" ? "wss" : "ws";
+  const ws = new WebSocket(`${wsScheme}://${window.location.host}/ws/threads/${threadId}/`);
+  
+  let isConnected = false;
+  
+  ws.addEventListener("open", () => {
+    isConnected = true;
+    console.log("WebSocket connected");
+  });
+
+  ws.addEventListener("close", () => {
+    isConnected = false;
+    console.log("WebSocket disconnected");
+  });
+
+  ws.addEventListener("message", (evt) => {
+    const data = JSON.parse(evt.data);
+    console.log("Received message:", data);
+    
+    // Handle different message types
+    if (data.type === "ready") {
+      console.log("WebSocket ready for", data.thread);
+    }
+    else if (data.type === "message_sent" || (data.type === "chat.message" && data.event === "message_new")) {
+      appendMessage({
+        sender: data.sender,
+        body: data.body,
+        created_at: data.created_at
+      });
+    }
+    else if (data.type === "error") {
+      console.error("Message error:", data.detail);
+      alert("Failed to send message: " + data.detail);
+    }
+  });
+
+  // Send via WS
+  formEl.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const body = (inputEl.value || "").trim();
+    if (!body) return;
+    
+    if (!isConnected) {
+      alert("Not connected to chat. Please refresh the page.");
+      return;
+    }
+
+    ws.send(JSON.stringify({ action: "send", body }));
+    inputEl.value = "";
+  });
+</script>
+{% endblock %}
