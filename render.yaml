@@ -2,6 +2,7 @@ services:
   - type: web
     name: cloakpost-web
     runtime: python
+    plan: free
     buildCommand: |
       pip install -r requirements.txt
       python manage.py collectstatic --no-input
