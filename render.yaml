@@ -29,9 +29,12 @@ services:
           name: cloakpost-redis
           type: keyvalue
           property: connectionString
-
+          
   - type: keyvalue
     name: cloakpost-redis
+    ipAllowList:
+      - sourceService:
+          name: cloakpost-web
 
 databases:
   - name: cloakpost-db
